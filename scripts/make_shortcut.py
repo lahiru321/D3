@@ -12,13 +12,13 @@ import comtypes.client
 
 from d3 import autostart
 from d3.config import ROOT, resolve
-from d3.feedback.tray import _icon_image
+from d3.feedback.tray import logo_image
 
 
 def main() -> None:
     icon = resolve("data/d3.ico")
     icon.parent.mkdir(parents=True, exist_ok=True)
-    _icon_image("listening", 256).save(icon, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (256, 256)])
+    logo_image(256).save(icon, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (256, 256)])
 
     target, *args = shlex.split(autostart.command(), posix=False)
     shell = comtypes.client.CreateObject("WScript.Shell", dynamic=True)

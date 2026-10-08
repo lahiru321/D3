@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" alt="D3 logo" width="160"></p>
+
 # D3 — Build Plan
 
 Source: `D3 — Voice-Controlled Desktop Assistant PRD.md` (Oct 8, 2026).

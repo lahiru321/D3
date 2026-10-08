@@ -7,11 +7,12 @@ seconds, so plugging in a headset makes it appear without restarting D3.
 
 import os
 import threading
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import comtypes
 import pystray
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from d3 import autostart
 from d3.audio.devices import InputDevice, active_inputs
@@ -24,16 +25,27 @@ COLORS = {"listening": "#2e9e5b", "paused": "#7a7f87", "no mic": "#c0392b"}
 REFRESH_S = 3.0
 
 
+LOGO = ROOT / "assets" / "logo.png"
+LOGO_BOX = (176, 139, 1076, 1039)  # the robot, without most of the empty margin around it
+
+
+@lru_cache
+def logo_image(size: int) -> Image.Image:
+    """The D3 logo as a rounded-square app icon (desktop shortcut, tray)."""
+    img = Image.open(LOGO).convert("RGBA").crop(LOGO_BOX).resize((size, size), Image.LANCZOS)
+    big = size * 4  # draw the corners large and shrink, for smooth edges
+    mask = Image.new("L", (big, big), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, big - 1, big - 1), radius=big // 5, fill=255)
+    img.putalpha(mask.resize((size, size), Image.LANCZOS))
+    return img
+
+
 def _icon_image(state: str, size: int = 64) -> Image.Image:
-    s = size / 64  # drawn on a 64 px grid; the desktop shortcut uses a bigger one
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.ellipse((2 * s, 2 * s, 62 * s, 62 * s), fill=COLORS[state])
-    try:
-        font = ImageFont.truetype("segoeuib.ttf", round(26 * s))
-    except OSError:
-        font = ImageFont.load_default()
-    draw.text((32 * s, 33 * s), "D3", fill="white", font=font, anchor="mm")
+    """The logo with a status dot: green listening, grey paused, red no mic."""
+    img = logo_image(size).copy()
+    d = round(size * 0.38)
+    box = (size - d, size - d, size - 1, size - 1)
+    ImageDraw.Draw(img).ellipse(box, fill=COLORS[state], outline="#060e29", width=max(1, size // 20))
     return img
 
 
