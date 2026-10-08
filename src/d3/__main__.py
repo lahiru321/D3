@@ -44,8 +44,7 @@ def main() -> None:
         run_text(args.text, cfg)
         return
 
-    # The venv's pythonw.exe is a launcher that starts python.exe, which may get a console
-    # window; --background hides it, and pythonw output would otherwise be lost.
+    # No console (scripts/run_background.pyw): pythonw would drop the output, so log to a file.
     windowless = args.background or sys.stdout is None
     if windowless:
         console = ctypes.windll.kernel32.GetConsoleWindow()

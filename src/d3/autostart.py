@@ -4,6 +4,8 @@ import sys
 import winreg
 from pathlib import Path
 
+from d3.config import ROOT
+
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE = "D3"
 
@@ -12,8 +14,9 @@ def command() -> str:
     exe = Path(sys.executable)
     if getattr(sys, "frozen", False):  # packaged D3.exe
         return f'"{exe}"'
-    pythonw = exe.with_name("pythonw.exe")  # no console window
-    return f'"{pythonw if pythonw.exists() else exe}" -m d3 --background'
+    # The base interpreter's pythonw (no console window), via a script that loads the venv.
+    pythonw = Path(getattr(sys, "_base_executable", exe)).with_name("pythonw.exe")
+    return f'"{pythonw}" "{ROOT / "scripts" / "run_background.pyw"}"'
 
 
 def is_enabled() -> bool:
