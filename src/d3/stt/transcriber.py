@@ -15,12 +15,15 @@ import numpy as np
 from faster_whisper import WhisperModel
 from vosk import KaldiRecognizer, Model, SetLogLevel
 
-# Biases Whisper toward D3's vocabulary.
-INITIAL_PROMPT = (
-    "Voice commands: pause, continue, resume, play, stop, next, skip, previous, go back, "
-    "volume up, volume down, louder, quieter, mute, unmute, open, close, quit, launch, show me, folder, drive, "
-    "first, second, third, cancel, never mind, VS Code, Downloads, StoreX."
+# Biases Whisper toward D3's vocabulary. It goes at the END of the prompt: faster-whisper keeps
+# only the last PROMPT_TOKENS tokens, and an earlier version lost these words to a long name list
+# ("close" was then heard as "Class"/"Cross").
+COMMANDS_PROMPT = (
+    " Commands: open, close, quit, launch, show me, folder, drive, pause, continue, resume, play, stop, "
+    "next, skip, previous, go back, volume up, volume down, louder, quieter, mute, unmute, "
+    "first, second, third, cancel, never mind."
 )
+PROMPT_TOKENS = 215  # faster-whisper keeps the last 223 prompt tokens; leave a little slack
 
 # Whisper's classic outputs on silence or noise.
 HALLUCINATIONS = {"", "you", "thank you", "thanks", "thank you for watching", "thanks for watching", "bye"}
@@ -50,7 +53,7 @@ class Transcriber:
         self._whisper = WhisperModel(cfg["whisper_model"], device="cpu", compute_type="int8",
                                      cpu_threads=cfg["whisper_threads"])
         self._beam = cfg["whisper_beam"]
-        self._prompt = INITIAL_PROMPT
+        self._prompt = COMMANDS_PROMPT.strip()
         # Warm-up so the first real command isn't slow.
         list(self._whisper.transcribe(np.zeros(16_000, dtype=np.float32), language="en")[0])
 
@@ -58,11 +61,28 @@ class Transcriber:
     def grammar(self) -> list[str]:
         return list(self._grammar)
 
-    def set_names(self, names: list[str]) -> None:
-        """Bias Whisper toward the user's folder and app names. Without this, tiny.en heard
-        'Lumora' as 'Lumura' on every test clip; with it, all clips were right. Names go
-        last: faster-whisper keeps the end of an over-long prompt."""
-        self._prompt = INITIAL_PROMPT + " Names: " + ", ".join(names) + "."
+    def set_names(self, names: list[str]) -> int:
+        """Bias Whisper toward the user's folder and app names (most important first). Without
+        names, tiny.en heard 'Lumora' as 'Lumura' on every test clip; with them, all were right.
+        Keeps as many names as fit the prompt budget, with the command words after them so
+        they are never truncated. Returns how many names fit."""
+        def build(kept: list[str]) -> str:
+            return f"Names: {', '.join(kept)}.{COMMANDS_PROMPT}" if kept else COMMANDS_PROMPT.strip()
+
+        def tokens(text: str) -> int:
+            return len(self._whisper.hf_tokenizer.encode(" " + text).ids)
+
+        kept: list[str] = []
+        for name in names:
+            if tokens(build(kept + [name])) > PROMPT_TOKENS:
+                continue  # a shorter name further down may still fit
+            kept.append(name)
+        self._prompt = build(kept)
+        return len(kept)
+
+    @property
+    def prompt(self) -> str:
+        return self._prompt
 
     def transcribe(self, audio: np.ndarray) -> Transcript:
         """audio: int16 mono at 16 kHz."""

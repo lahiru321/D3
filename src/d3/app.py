@@ -82,7 +82,8 @@ class Assistant:
         ledger = UsageLedger(resolve(cfg["data"]["dir"]) / "llm_usage.json")
         today = ledger.today()
         print(f"  LLM fallback: {llm_cfg['model']}, {today['calls']}/{llm_cfg['daily_call_cap']} calls used today")
-        return LlmRouter(llm_cfg, ledger, self.resolver.hint_names())
+        # Cap the names: every one is paid input on each call.
+        return LlmRouter(llm_cfg, ledger, self.resolver.hint_names()[:150])
 
     def run(self) -> None:
         """Blocks until Ctrl+C or Turn off. The pipeline runs on a worker thread, the tray on its own."""

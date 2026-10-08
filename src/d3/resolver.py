@@ -5,6 +5,7 @@ words are corrected against a vocabulary of the user's folder and app names and
 the lookup is retried. The same vocabulary is given to Whisper as a hint.
 """
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +26,37 @@ CHOOSE = "choose"
 NONE = "none"
 
 CORRECTION_CUTOFF = 80
+
+GENERIC_NAMES = {
+    "new folder", "files", "br", "bin", "assets", "resources", "locales", "policies", "tools", "appx", "uploads",
+    "backups", "interfaces", "gamesaves", "data", "cache", "logs", "temp", "tmp", "config", "lib", "src", "docs",
+    "images", "imageuploads", "plugins", "scripts", "build", "dist", "public", "static", "test", "tests", "app",
+    # Windows/Office default folders
+    "custom office templates", "my games", "my music", "my pictures", "my videos", "camera roll",
+    "saved pictures", "screenshots", "video projects",
+}
+# Windows utilities: rarely said, and every name costs part of Whisper's small prompt budget.
+SYSTEM_APPS = {"run", "services", "magnifier", "narrator", "news", "weather", "clock", "camera", "pemhttpd",
+               "wsl", "access", "publisher", "xbox"}
+
+
+def pinned_app_names() -> list[str]:
+    """Apps on the taskbar and desktop: the ones people actually use and say."""
+    places = [
+        Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Internet Explorer" / "Quick Launch" / "User Pinned" / "TaskBar",
+        Path(os.environ.get("USERPROFILE", "")) / "Desktop",
+        Path(os.environ.get("PUBLIC", "")) / "Desktop",
+    ]
+    names = []
+    for place in places:
+        try:
+            for lnk in sorted(place.glob("*.lnk")):
+                name = re.sub(r" - Copy( \(\d+\))?$", "", lnk.stem)
+                if name not in names:
+                    names.append(name)
+        except OSError:
+            continue
+    return names
 
 
 @dataclass
@@ -65,20 +97,31 @@ class Resolver:
             self.files = None
 
         self.folder_names = folder_names(roots, search["excludes"])
+        self.top_folders = folder_names(roots, search["excludes"], depth=1)  # 'Lumora', 'PROJECTS'
         self._vocab = sorted({w for name in self.folder_names + [a.name for a in self.apps.apps]
                               + list(self._folder_aliases)
                               for w in re.sub(r"[^a-z0-9]+", " ", name.lower()).split() if len(w) >= 4})
 
-    def hint_names(self, limit: int = 120) -> list[str]:
-        """Names to bias speech recognition: folder aliases, nearby folders, short app names."""
-        apps = [a.name for a in self.apps.apps if len(a.name.split()) <= 2]
+    def hint_names(self) -> list[str]:
+        """Names to bias speech recognition, most likely to be said first (the Transcriber keeps
+        as many as fit Whisper's prompt): folder aliases, taskbar/desktop apps, one-word Start
+        menu apps, then folders near the top of the search roots."""
+        pinned = pinned_app_names()
+        one_word_apps = [a.name for a in self.apps.apps
+                         if len(a.name.split()) == 1 and a.name.lower() not in SYSTEM_APPS]
+        other_apps = [a.name for a in self.apps.apps if len(a.name.split()) == 2]
+        ordered = (list(self._folder_aliases) + pinned + one_word_apps + self.top_folders
+                   + self.folder_names + other_apps)
         names: list[str] = []
-        for name in list(self._folder_aliases) + self.folder_names + apps:
-            # Skip dated/numbered and generic folders: they add noise, not words people say.
-            if (name not in names and len(name.split()) <= 3 and not re.search(r"\d{2,}", name)
-                    and name.lower() not in {"new folder", "files", "br"}):
+        seen: set[str] = set()
+        for name in ordered:
+            key = name.lower()
+            # Skip numbered, default-Windows and generic tech folders: noise, not words people say.
+            if (key not in seen and len(name.split()) <= 3 and key not in GENERIC_NAMES
+                    and not (re.search(r"\d", name) and len(name) > 3)):
                 names.append(name)
-        return names[:limit]
+                seen.add(key)
+        return names
 
     def correct(self, target: str) -> str:
         """Replace misheard words with the closest folder/app vocabulary word ('loumora' -> 'lumora')."""

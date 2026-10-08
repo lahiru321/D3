@@ -25,6 +25,7 @@ SYSTEM = """You turn one spoken command for D3, a Windows voice assistant, into 
 The text comes from speech recognition, so words may be misheard: use the user's folder and app names below to correct them.
 For open_item, give the target as the name would appear on disk or in the Start menu, without filler words. Keep date words ("last month's", "yesterday's") and type words ("pdf", "folder").
 If the request isn't one of these actions, or is too unclear to act on, call not_understood. Never guess.
+Only open or close something when the words clearly name it, allowing for small mishearings ("Loumora" -> "Lumora"). If the text looks garbled (e.g. "Class one set", "Cross-knocking mode"), call not_understood: doing the wrong thing is worse than asking the user to repeat.
 
 User's folder and app names: {names}"""
 
