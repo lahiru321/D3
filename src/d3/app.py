@@ -21,6 +21,25 @@ from d3.router import keyword
 from d3.stt.transcriber import Transcriber
 
 VOLUME_INTENTS = {I.VOLUME_UP, I.VOLUME_DOWN, I.MUTE, I.UNMUTE}
+MODIFIERS = ("ctrl", "shift", "alt", "windows")
+
+
+def register_hotkey(hotkey: str, callback) -> None:
+    """Single keys fire once on release (auto-repeat can't double-fire), and not when a
+    modifier is held, so shift+` (typing ~) is left alone. Combinations fire on press.
+
+    keyboard.add_hotkey(trigger_on_release=True) can't be used: the library drops the
+    released key from its pressed-keys state before matching, so single keys never fire.
+    """
+    if "+" in hotkey or "," in hotkey:
+        keyboard.add_hotkey(hotkey, callback)
+        return
+
+    def on_release(_event) -> None:
+        if not any(keyboard.is_pressed(m) for m in MODIFIERS):
+            callback()
+
+    keyboard.on_release_key(hotkey, on_release)
 
 
 class Assistant:
@@ -40,8 +59,7 @@ class Assistant:
 
     def run(self) -> None:
         """Blocks until Ctrl+C. The pipeline runs on a worker thread (the main thread is kept for the tray later)."""
-        # On release, so holding the key (auto-repeat) can't fire it twice.
-        keyboard.add_hotkey(self.cfg["wake"]["hotkey"], self.listener.trigger_hotkey, trigger_on_release=True)
+        register_hotkey(self.cfg["wake"]["hotkey"], self.listener.trigger_hotkey)
         self.listener.start()
         worker = threading.Thread(target=self._loop, name="d3-pipeline", daemon=True)
         worker.start()
