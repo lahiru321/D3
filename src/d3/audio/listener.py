@@ -1,8 +1,13 @@
-"""Microphone -> wake word / hotkey -> one command utterance.
+"""Microphone -> wake word / push-to-talk -> one command utterance.
 
-Audio arrives in 80 ms frames (1280 samples at 16 kHz, openWakeWord's frame size).
-While idle, frames feed the wake-word model. After a trigger, Silero VAD finds
-the start of speech and the trailing silence that ends the command.
+Audio arrives in 80 ms frames (1280 samples at 16 kHz, openWakeWord's frame size),
+each stamped with the time it was captured. While idle, frames feed the wake-word
+model. Two ways to capture a command:
+
+- Wake word: Silero VAD finds the start of speech and the trailing silence that ends it.
+- Push-to-talk: everything between key press and release (plus a short pre-roll and
+  tail). Releasing ends the command at once, with no silence wait. Taps shorter than
+  `ptt_min_hold_ms` are ignored, so typing the key in an editor does nothing.
 """
 
 import queue
@@ -19,15 +24,17 @@ from openwakeword.vad import VAD
 SAMPLE_RATE = 16_000
 FRAME = 1280                     # 80 ms
 FRAME_MS = FRAME * 1000 // SAMPLE_RATE
+PTT_TAIL_FRAMES = 1              # one more frame after release: people let go mid-word
 
 
 @dataclass
 class Utterance:
     audio: np.ndarray | None     # int16; None if nothing was said
-    trigger: str                 # wake | hotkey
+    trigger: str                 # wake | ptt
     wake_score: float
-    speech_end: float            # perf_counter() at the last speech frame
+    speech_end: float            # perf_counter() at the last speech frame / key release
     endpoint_ms: float           # trailing silence waited before cutting
+    tap: bool = False            # push-to-talk key only tapped: ignore silently
 
 
 class Listener:
@@ -38,8 +45,12 @@ class Listener:
         self._wake_threshold = wake_cfg["threshold"]
         self._vad = VAD()
         self._cfg = listen_cfg
-        self._frames: queue.Queue[np.ndarray] = queue.Queue(maxsize=200)
-        self._hotkey = threading.Event()
+        self._frames: queue.Queue[tuple[float, np.ndarray]] = queue.Queue(maxsize=200)
+        self._recent: deque[tuple[float, np.ndarray]] = deque(maxlen=listen_cfg["preroll_ms"] // FRAME_MS + 1)
+        self._ptt_down = threading.Event()
+        self._ptt_up = threading.Event()
+        self._press_time = 0.0
+        self._release_time = 0.0
         self._stream: sd.InputStream | None = None
 
     @staticmethod
@@ -53,12 +64,18 @@ class Listener:
                 return idx
         raise ValueError(f"No input device matching {spec!r}")
 
-    def trigger_hotkey(self) -> None:
-        self._hotkey.set()
+    # Called from the keyboard hook thread.
+    def ptt_press(self) -> None:
+        if not self._ptt_down.is_set():  # ignore key auto-repeat
+            self._press_time = time.perf_counter()
+            self._ptt_up.clear()
+            self._ptt_down.set()
 
-    def clear_hotkey(self) -> None:
-        """Forget presses made while a command was being handled."""
-        self._hotkey.clear()
+    def ptt_release(self) -> None:
+        if self._ptt_down.is_set():
+            self._release_time = time.perf_counter()
+            self._ptt_down.clear()
+            self._ptt_up.set()
 
     def start(self) -> None:
         self._stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16",
@@ -71,44 +88,78 @@ class Listener:
 
     def _on_audio(self, indata, frames, time_info, status) -> None:
         try:
-            self._frames.put_nowait(indata[:, 0].copy())
+            self._frames.put_nowait((time.perf_counter(), indata[:, 0].copy()))
         except queue.Full:
             pass  # pipeline is busy (e.g. transcribing); dropping idle audio is fine
 
-    def _next_frame(self) -> np.ndarray:
+    def _next_frame(self) -> tuple[float, np.ndarray]:
         return self._frames.get(timeout=2.0)
 
-    def wait_for_trigger(self, on_trigger) -> tuple[str, float]:
-        """Block until the wake word or hotkey fires. Calls on_trigger() immediately."""
+    def wait_for_trigger(self) -> tuple[str, float]:
+        """Block until the wake word fires or the push-to-talk key goes down."""
+        self._recent.clear()
         while True:
-            if self._hotkey.is_set():
-                self._hotkey.clear()
-                trigger, score = "hotkey", 0.0
-                break
+            if self._ptt_down.is_set():
+                self._wake.reset()
+                return "ptt", 0.0
             try:
-                frame = self._next_frame()
+                stamped = self._next_frame()
             except queue.Empty:
                 continue
-            score = float(self._wake.predict(frame)[self._wake_name])
+            self._recent.append(stamped)
+            score = float(self._wake.predict(stamped[1])[self._wake_name])
             if score >= self._wake_threshold:
-                trigger = "wake"
-                break
-        on_trigger()
-        self._wake.reset()
-        self._drain()
-        return trigger, score
+                self._wake.reset()
+                return "wake", score
 
-    def _drain(self) -> None:
+    def drain(self) -> None:
         while not self._frames.empty():
             self._frames.get_nowait()
 
+    def capture_ptt(self, on_hold) -> Utterance:
+        """Collect audio while the key is held. Calls on_hold() once the press is long enough to count."""
+        cfg = self._cfg
+        min_hold = cfg["ptt_min_hold_ms"] / 1000
+        preroll = cfg["preroll_ms"] / 1000
+        max_s = cfg["max_ms"] / 1000
+        press = self._press_time
+
+        # Pre-roll from frames already seen, then anything queued since; drop audio from before the press window.
+        chunks = [f for t, f in self._recent if t >= press - preroll]
+        held_announced = False
+        tail = None
+        while True:
+            try:
+                t, frame = self._next_frame()
+            except queue.Empty:
+                break
+            if t < press - preroll:
+                continue  # backlog from before the press
+            chunks.append(frame)
+            now = time.perf_counter()
+            if not held_announced and now - press >= min_hold and not self._ptt_up.is_set():
+                held_announced = True
+                on_hold()
+            if self._ptt_up.is_set():
+                if self._release_time - press < min_hold:
+                    return Utterance(None, "ptt", 0.0, self._release_time, 0.0, tap=True)
+                tail = PTT_TAIL_FRAMES if tail is None else tail - 1
+                if tail <= 0:
+                    break
+            if now - press > max_s:
+                break
+
+        end = self._release_time if self._ptt_up.is_set() else time.perf_counter()
+        audio = np.concatenate(chunks) if chunks else None
+        return Utterance(audio, "ptt", 0.0, end, 0.0)
+
     def capture_command(self, trigger: str, score: float) -> Utterance:
+        """Wake-word path: VAD start/end detection."""
         cfg = self._cfg
         skip_frames = cfg["ignore_after_chime_ms"] // FRAME_MS
         silence_needed = cfg["silence_ms"] // FRAME_MS
         max_frames = cfg["max_ms"] // FRAME_MS
         wait_frames = cfg["no_speech_timeout_ms"] // FRAME_MS
-
         preroll_frames = cfg["preroll_ms"] // FRAME_MS
 
         self._vad.reset_states()
@@ -122,7 +173,7 @@ class Listener:
         n = 0
         while n < max_frames + wait_frames:
             try:
-                frame = self._next_frame()
+                _, frame = self._next_frame()
             except queue.Empty:
                 break
             n += 1

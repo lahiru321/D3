@@ -24,22 +24,19 @@ VOLUME_INTENTS = {I.VOLUME_UP, I.VOLUME_DOWN, I.MUTE, I.UNMUTE}
 MODIFIERS = ("ctrl", "shift", "alt", "windows")
 
 
-def register_hotkey(hotkey: str, callback) -> None:
-    """Single keys fire once on release (auto-repeat can't double-fire), and not when a
-    modifier is held, so shift+` (typing ~) is left alone. Combinations fire on press.
+def register_ptt(key: str, on_press, on_release) -> None:
+    """Push-to-talk on a single key. Presses with a modifier held are ignored, so
+    shift+` (typing ~) is left alone. Hooks the key directly: keyboard.add_hotkey
+    can't report releases of single keys."""
+    if "+" in key or "," in key:
+        raise ValueError(f"Push-to-talk needs a single key, not a combination: {key!r}")
 
-    keyboard.add_hotkey(trigger_on_release=True) can't be used: the library drops the
-    released key from its pressed-keys state before matching, so single keys never fire.
-    """
-    if "+" in hotkey or "," in hotkey:
-        keyboard.add_hotkey(hotkey, callback)
-        return
-
-    def on_release(_event) -> None:
+    def pressed(_event) -> None:
         if not any(keyboard.is_pressed(m) for m in MODIFIERS):
-            callback()
+            on_press()
 
-    keyboard.on_release_key(hotkey, on_release)
+    keyboard.on_press_key(key, pressed)
+    keyboard.on_release_key(key, lambda _event: on_release())
 
 
 class Assistant:
@@ -59,11 +56,12 @@ class Assistant:
 
     def run(self) -> None:
         """Blocks until Ctrl+C. The pipeline runs on a worker thread (the main thread is kept for the tray later)."""
-        register_hotkey(self.cfg["wake"]["hotkey"], self.listener.trigger_hotkey)
+        ptt_key = self.cfg["wake"]["ptt_key"]
+        register_ptt(ptt_key, self.listener.ptt_press, self.listener.ptt_release)
         self.listener.start()
         worker = threading.Thread(target=self._loop, name="d3-pipeline", daemon=True)
         worker.start()
-        print(f"Listening. Say \"hey jarvis\" or press {self.cfg['wake']['hotkey']}, then a command. Ctrl+C quits.")
+        print(f"Listening. Say \"hey jarvis\" then a command, or hold {ptt_key} while you speak. Ctrl+C quits.")
         if self.cfg["log"]["save_audio"]:
             print(f"Debug: saving every command's audio to {self._debug_dir}")
         try:
@@ -82,7 +80,6 @@ class Assistant:
         while not self._stop.is_set():
             try:
                 self._handle_one()
-                self.listener.clear_hotkey()
             except Exception as exc:  # keep listening whatever happens
                 self.volume.restore()
                 sounds.play("error")
@@ -100,14 +97,23 @@ class Assistant:
             wf.writeframes(audio.tobytes())
         return path.name
 
-    def _on_trigger(self) -> None:
-        sounds.play("wake")
+    def _duck(self) -> None:
         self.volume.duck(self.cfg["listen"]["duck_to"])
 
     def _handle_one(self) -> None:
-        trigger, score = self.listener.wait_for_trigger(self._on_trigger)
-        print(f"\n> {trigger}" + (f" ({score:.2f})" if trigger == "wake" else ""))
-        utt = self.listener.capture_command(trigger, score)
+        trigger, score = self.listener.wait_for_trigger()
+        if trigger == "ptt":
+            # No wake chime: holding the key is the feedback, and the chime would land in the recording.
+            utt = self.listener.capture_ptt(on_hold=self._duck)
+            if utt.tap:
+                return  # key typed, not held: ignore silently
+            print("\n> push-to-talk")
+        else:
+            sounds.play("wake")
+            self._duck()
+            self.listener.drain()
+            print(f"\n> wake ({score:.2f})")
+            utt = self.listener.capture_command(trigger, score)
 
         if utt.audio is None:
             self.volume.restore()
