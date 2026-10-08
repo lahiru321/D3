@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Build
+build/
+dist/
+*.spec
+
+# Local data (logs, recordings, models, secrets)
+logs/
+recordings/
+models/
+.env
+config.toml
+
+# Benchmark output
+bench/out/

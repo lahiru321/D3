@@ -1,0 +1,21 @@
+# One command per line. Used by make_test_audio.ps1, record_commands.py and bench_stt.py.
+pause
+continue
+next
+previous
+volume up
+volume down
+mute
+unmute
+stop
+resume
+skip
+go back
+louder
+quieter
+open my downloads
+open VS Code
+open the StoreX proposal
+open last month's invoice
+second
+never mind
