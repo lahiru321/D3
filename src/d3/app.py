@@ -1,5 +1,6 @@
 """The D3 pipeline: trigger -> listen -> transcribe -> route -> execute -> feedback -> log."""
 
+import os
 import re
 import threading
 import time
@@ -20,6 +21,7 @@ from d3.handlers.volume import VolumeController
 from d3.log import CommandLog
 from d3.resolver import Resolver
 from d3.router import keyword
+from d3.router.llm import LlmRouter, UsageLedger
 from d3.stt.transcriber import Transcriber
 
 MODIFIERS = ("ctrl", "shift", "alt", "windows")
@@ -45,6 +47,7 @@ class Assistant:
         self.cfg = cfg
         print("Loading models...")
         t0 = time.perf_counter()
+        keyword.add_aliases(cfg.get("commands", {}).get("aliases", {}))
         self.transcriber = Transcriber(cfg["stt"], list(keyword.COMMANDS), resolve(cfg["stt"]["vosk_model"]))
         self.listener = Listener(cfg["audio"], cfg["wake"], cfg["listen"])
         self.media = MediaController()
@@ -56,10 +59,23 @@ class Assistant:
         self.executor = Executor(self.media, self.volume, self.resolver,
                                  choice_timeout_s=cfg["dialog"]["choice_timeout_ms"] / 1000)
         self.osd = Osd()
+        self.llm = self._make_llm(cfg)
         self.log = CommandLog(resolve(cfg["log"]["dir"]))
         self._debug_dir = resolve("recordings/debug")
         self._stop = threading.Event()
         print(f"Ready in {time.perf_counter() - t0:.1f} s")
+
+    def _make_llm(self, cfg: dict) -> LlmRouter | None:
+        llm_cfg = cfg["llm"]
+        if not llm_cfg["enabled"]:
+            return None
+        if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+            print("  ! No ANTHROPIC_API_KEY: LLM fallback disabled (local commands still work)")
+            return None
+        ledger = UsageLedger(resolve(cfg["data"]["dir"]) / "llm_usage.json")
+        today = ledger.today()
+        print(f"  LLM fallback: {llm_cfg['model']}, {today['calls']}/{llm_cfg['daily_call_cap']} calls used today")
+        return LlmRouter(llm_cfg, ledger, self.resolver.hint_names())
 
     def run(self) -> None:
         """Blocks until Ctrl+C. The pipeline runs on a worker thread (the main thread is kept for the tray later)."""
@@ -96,8 +112,14 @@ class Assistant:
     def _duck(self) -> None:
         self.volume.duck(self.cfg["listen"]["duck_to"])
 
+    def _on_mic_change(self, lost: bool) -> None:
+        message = "Microphone disconnected: waiting for it" if lost else "Microphone reconnected"
+        print(f"  ! {message}")
+        self.osd.show(message, "error" if lost else "ok")
+        self.log.write(event="mic_lost" if lost else "mic_back")
+
     def _handle_one(self) -> None:
-        trigger, score = self.listener.wait_for_trigger()
+        trigger, score = self.listener.wait_for_trigger(self._on_mic_change)
         if trigger == "ptt":
             # No wake chime: holding the key is the feedback, and the chime would land in the recording.
             utt = self.listener.capture_ptt(on_hold=self._duck)
@@ -136,6 +158,15 @@ class Assistant:
         route_ms = (time.perf_counter() - t_route) * 1000
         print(f"  heard [{tr.engine}, {tr.ms:.0f} ms]: {tr.text!r}" + ("" if tr.confident else " (low confidence)"))
 
+        # LLM fallback: only for confident, multi-word phrases the local router couldn't match
+        # (single unmatched words are almost always noise, and every call costs money).
+        llm = None
+        if intent is None and tr.confident and self.llm is not None and len(keyword.normalize(tr.text).split()) >= 2:
+            self.volume.restore()
+            llm = self.llm.route(tr.text)
+            intent = llm.intent
+            print(f"  llm [{llm.ms:.0f} ms, ${llm.cost_usd:.4f}]: {llm.note}")
+
         # Restore before acting so volume commands work from the real level, not the ducked one.
         self.volume.restore()
         t_exec = time.perf_counter()
@@ -157,7 +188,10 @@ class Assistant:
             event="command", trigger=trigger, wake_score=round(score, 3), audio_file=audio_file,
             text=tr.text, engine=tr.engine, confident=tr.confident,
             intent=intent.name if intent else None, args=intent.args if intent else None,
+            source=intent.source if intent else None,
             ok=result.ok, result=result.message, asked=bool(result.choices),
+            llm=None if llm is None else {"note": llm.note, "ms": round(llm.ms), "input_tokens": llm.input_tokens,
+                                          "output_tokens": llm.output_tokens, "cost_usd": round(llm.cost_usd, 6)},
             timings_ms={
                 "endpoint": round(utt.endpoint_ms), "stt": round(tr.ms), "route": round(route_ms, 2),
                 "exec": round((done - t_exec) * 1000), "queue": round((t_stt - utt.speech_end) * 1000 - utt.endpoint_ms),

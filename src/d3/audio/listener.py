@@ -21,6 +21,8 @@ import sounddevice as sd
 from openwakeword.model import Model as WakeModel
 from openwakeword.vad import VAD
 
+from d3.config import resolve
+
 SAMPLE_RATE = 16_000
 FRAME = 1280                     # 80 ms
 FRAME_MS = FRAME * 1000 // SAMPLE_RATE
@@ -39,8 +41,12 @@ class Utterance:
 
 class Listener:
     def __init__(self, audio_cfg: dict, wake_cfg: dict, listen_cfg: dict) -> None:
-        self._device = self._pick_device(audio_cfg.get("device", ""))
-        self._wake = WakeModel(wakeword_models=[wake_cfg["model"]], inference_framework="onnx")
+        self._device_spec = audio_cfg.get("device", "")
+        self._device = self._pick_device(self._device_spec)
+        model = wake_cfg["model"]  # a built-in name ("hey_jarvis") or a trained file ("models/hey_d3.onnx")
+        if model.endswith(".onnx"):
+            model = str(resolve(model))
+        self._wake = WakeModel(wakeword_models=[model], inference_framework="onnx")
         self._wake_name = next(iter(self._wake.models))
         self._wake_threshold = wake_cfg["threshold"]
         self._vad = VAD()
@@ -86,6 +92,24 @@ class Listener:
         if self._stream is not None:
             self._stream.close()
 
+    def recover(self) -> bool:
+        """Called when no audio has arrived for a while (mic unplugged, driver reset).
+        Re-scans devices and reopens the stream; returns True once audio flows again."""
+        try:
+            if self._stream is not None:
+                self._stream.close()
+        except sd.PortAudioError:
+            pass
+        self._stream = None
+        try:
+            sd._terminate()   # PortAudio only sees new/removed devices after re-initialising
+            sd._initialize()
+            self._device = self._pick_device(self._device_spec)
+            self.start()
+            return True
+        except (sd.PortAudioError, ValueError):
+            return False
+
     def _on_audio(self, indata, frames, time_info, status) -> None:
         try:
             self._frames.put_nowait((time.perf_counter(), indata[:, 0].copy()))
@@ -95,9 +119,11 @@ class Listener:
     def _next_frame(self) -> tuple[float, np.ndarray]:
         return self._frames.get(timeout=2.0)
 
-    def wait_for_trigger(self) -> tuple[str, float]:
-        """Block until the wake word fires or the push-to-talk key goes down."""
+    def wait_for_trigger(self, on_mic_change=None) -> tuple[str, float]:
+        """Block until the wake word fires or the push-to-talk key goes down.
+        Reconnects the mic if audio stops; on_mic_change(lost: bool) reports it."""
         self._recent.clear()
+        mic_lost = False
         while True:
             if self._ptt_down.is_set():
                 self._wake.reset()
@@ -105,7 +131,18 @@ class Listener:
             try:
                 stamped = self._next_frame()
             except queue.Empty:
+                # 2 s without a frame: the mic is gone. Retry every couple of seconds.
+                if not mic_lost:
+                    mic_lost = True
+                    if on_mic_change:
+                        on_mic_change(True)
+                if not self.recover():
+                    time.sleep(2.0)
                 continue
+            if mic_lost:
+                mic_lost = False
+                if on_mic_change:
+                    on_mic_change(False)
             self._recent.append(stamped)
             score = float(self._wake.predict(stamped[1])[self._wake_name])
             if score >= self._wake_threshold:

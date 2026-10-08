@@ -4,7 +4,7 @@
 device = ""                 # input device index or name substring; "" = Windows default
 
 [wake]
-model = "hey_jarvis"        # stand-in until the custom "Hey D3" model (Phase 3)
+model = "hey_jarvis"        # built-in stand-in; a trained model file works too: "models/hey_d3.onnx" (see PLAN.md)
 threshold = 0.5
 ptt_key = "`"               # push-to-talk: hold while speaking, release to run (single key only)
 
@@ -46,6 +46,19 @@ projects = 'D:\PROJECTS'
 
 [apps.aliases]
 # Spoken name = Start menu name, e.g. "browser" = "Google Chrome"
+
+[commands.aliases]
+# Your own phrases for built-in commands (helps with accents), e.g.
+# "shut up" = "mute"
+# "keep going" = "continue"
+
+[llm]
+# Fallback for phrasing the local router can't match. Text only; audio never leaves the PC.
+enabled = true
+model = "claude-haiku-4-5"
+daily_call_cap = 50       # stops calling (and says "I didn't catch that") after this many calls a day
+timeout_s = 4.0
+max_tokens = 200
 
 [dialog]
 choice_timeout_ms = 30000 # how long the "which one?" list stays on screen and "first / second / third" works

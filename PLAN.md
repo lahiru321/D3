@@ -210,12 +210,22 @@ Verified without a live speaker: all 20 of the user's recordings route to the ri
 **Gate 2:** a test set of 20 real "open …" phrases from the user's own files gets ≥ 85% right first try; disambiguation works end to end.
 
 ### Phase 3: Robustness, LLM fallback and the real wake word (week 4)
-- [ ] LLM router: Claude tool use with tools that mirror the intents; text only; 2.5 s timeout; on failure say "I didn't catch that" (FR-5)
-- [ ] Train the custom "Hey D3" openWakeWord model; tune the threshold against 1 h of video playback (target < 1 false wake per hour)
-- [ ] Duck system volume while listening and restore afterwards
-- [ ] Mic unplug/replug recovery (re-open the stream when the device list changes)
-- [ ] Custom aliases per command (from config) for accent issues
-- [ ] `scripts/metrics.py`: success rate, median latency, false wakes, first-try file accuracy
+- [x] LLM router (FR-5), `src/d3/router/llm.py`:
+  - Claude Haiku 4.5, one request per command, forced tool choice over six tools that mirror the intents (`open_item`, `media_control`, `set_volume`, `choose_option`, `cancel`, `not_understood`); the user's folder/app names are in the prompt so it can fix misheard names.
+  - Only called for confident multi-word phrases the keyword router can't match.
+  - Guardrails: daily cap 50, 4 s timeout, no retries, max_tokens 200, usage per day in `data/llm_usage.json`.
+  - Measured: ~1,615 input + ~30 output tokens ≈ $0.0017 per call; 770–960 ms per call once `strict` schemas were dropped (their first-use grammar compile caused 3 s timeouts). 9/9 test phrasings handled sensibly ("can you stop the music for a sec" → pause, "bring up my lumora stuff" → open Lumora folder, "what's the weather like" → not understood).
+- [ ] Train the custom "Hey D3" model (user step, see below); tune the threshold against 1 h of video playback (target < 1 false wake per hour)
+- [x] Duck system volume while listening (done in Phase 1)
+- [x] Mic recovery: 2 s without audio → re-initialise PortAudio, re-find the device, reopen; retry every 2 s; on-screen "Microphone disconnected / reconnected". Simulated dropped stream recovered in 0.1 s; a real unplug still needs a live test.
+- [x] Custom aliases per command: `[commands.aliases]` in config (also added to Vosk's grammar)
+- [x] `scripts/metrics.py`: success rate, local and LLM latency, first-try file opens, daily use, wakes with no command, LLM spend
+
+**Training "Hey D3" (about 1 hour, free):**
+1. Open openWakeWord's simple training notebook: https://colab.research.google.com/drive/1q1oe2zOyZp7UsB3jJiQ1IFn8z5YfjwEb?usp=sharing (linked from the openWakeWord README).
+2. Target phrase: write it the way it is said, `hey dee three`, so the synthetic voices pronounce it right. Run all cells.
+3. Download the `.onnx` file, save it as `models/hey_d3.onnx`, and set `[wake] model = "models/hey_d3.onnx"` in `config.toml`.
+4. Play an hour of YouTube with D3 running, then `uv run python scripts/metrics.py --days 1`: "Wakes with no command" should be ≤ 1. Raise `[wake] threshold` (0.5 → 0.6–0.7) if it triggers falsely; lower it if it misses you.
 
 **Gate 3:** 1 hour of YouTube playback gives < 1 false wake. Loose phrasing ("can you bring up the thing I sent to Kamal") resolves via the LLM in < 3 s. Unplugging and replugging the mic recovers without a restart.
 
@@ -237,7 +247,7 @@ The LLM is only the fallback. Media, volume, folder, app and well-phrased "open 
 
 | Part | Tokens |
 |---|---|
-| System prompt + 6–7 tool definitions + tool-use overhead | ~1,000 in |
+| System prompt + 6 tool definitions + tool-use overhead + the user's folder/app names (measured: ~1,600 in total) | ~1,600 in |
 | The transcribed command | ~20 in |
 | Tool call in the reply | ~60–100 out |
 

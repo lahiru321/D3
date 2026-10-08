@@ -47,6 +47,16 @@ FILLER = {
     "video", "music", "song", "track", "playback", "one",
 }
 
+def add_aliases(aliases: dict[str, str]) -> None:
+    """User phrases for built-in commands, from config [commands.aliases]: {"shut up": "mute"}.
+    Call before the Transcriber is built so the aliases join Vosk's grammar."""
+    for phrase, target in aliases.items():
+        target_key = normalize(target)
+        if target_key not in COMMANDS:
+            raise ValueError(f"Alias {phrase!r} points to unknown command {target!r}; use one of {sorted(COMMANDS)}")
+        COMMANDS[normalize(phrase)] = COMMANDS[target_key]
+
+
 OPEN_RE = re.compile(r"^(?:open|launch|start|show me|show)\s+(?P<target>.+)$")
 
 FUZZY_CUTOFF = 85
