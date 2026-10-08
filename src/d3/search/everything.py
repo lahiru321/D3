@@ -40,6 +40,7 @@ class EverythingError(RuntimeError):
 class SearchResult:
     path: Path
     modified: datetime | None
+    is_folder: bool = False
 
 
 class Everything:
@@ -59,6 +60,8 @@ class Everything:
         d.Everything_GetResultFullPathNameW.restype = wintypes.DWORD
         d.Everything_GetResultDateModified.argtypes = [wintypes.DWORD, ctypes.POINTER(wintypes.FILETIME)]
         d.Everything_GetResultDateModified.restype = wintypes.BOOL
+        d.Everything_IsFolderResult.argtypes = [wintypes.DWORD]
+        d.Everything_IsFolderResult.restype = wintypes.BOOL
         d.Everything_IsDBLoaded.restype = wintypes.BOOL
         d.Everything_GetMajorVersion.restype = wintypes.DWORD
         d.Everything_GetMinorVersion.restype = wintypes.DWORD
@@ -95,7 +98,7 @@ class Everything:
                 ticks = (ft.dwHighDateTime << 32) | ft.dwLowDateTime
                 if ticks:
                     modified = datetime.fromtimestamp((ticks - _EPOCH_DIFF_TICKS) / 10_000_000, tz=timezone.utc)
-            results.append(SearchResult(Path(buf.value), modified))
+            results.append(SearchResult(Path(buf.value), modified, bool(d.Everything_IsFolderResult(i))))
         return results
 
     def _raise(self) -> None:

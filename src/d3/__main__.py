@@ -1,31 +1,37 @@
 """Entry point: `uv run d3` (or `python -m d3`).
 
   d3                     run the voice assistant
-  d3 --text "pause"      run one typed command through the router + executor (no mic)
+  d3 --text "pause"      run a typed command through the router + executor (no mic); repeatable
 """
 
 import argparse
 
 
-def run_text(text: str, cfg: dict) -> None:
+def run_text(texts: list[str], cfg: dict) -> None:
+    """Run typed commands in order, e.g. --text "open the report" --text "second"."""
     from d3.executor import Executor
     from d3.handlers.media import MediaController
     from d3.handlers.volume import VolumeController
+    from d3.resolver import Resolver
     from d3.router import keyword
 
-    intent = keyword.route(text)
-    if intent is None:
-        print("I didn't catch that")
-        return
-    ok, message = Executor(MediaController(), VolumeController(cfg["volume"]["step"])).run(intent)
-    print(f"{intent.name} {intent.args or ''} -> {'OK' if ok else 'X'} {message}")
+    executor = Executor(MediaController(), VolumeController(cfg["volume"]["step"]), Resolver(cfg))
+    for text in texts:
+        intent = keyword.route(text)
+        if intent is None:
+            print(f"{text!r}: I didn't catch that")
+            continue
+        result = executor.run(intent)
+        print(f"{text!r}: {intent.name} {intent.args or ''} -> {'OK' if result.ok else 'X'} {result.message}")
+        if result.question:
+            print(f"   (would ask: {result.question})")
 
 
 def main() -> None:
     from d3.config import load_config
 
     parser = argparse.ArgumentParser(prog="d3", description="D3 voice-controlled desktop assistant")
-    parser.add_argument("--text", help="run one typed command instead of listening")
+    parser.add_argument("--text", action="append", help="run a typed command instead of listening (repeatable)")
     args = parser.parse_args()
     cfg = load_config()
 

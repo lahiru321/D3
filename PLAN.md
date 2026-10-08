@@ -193,15 +193,15 @@ Verified without a live speaker: all 20 of the user's recordings route to the ri
 **Gate 1:** pause/continue/next/volume work 10/10 times on YouTube in Chrome, on VLC and on Spotify. Saying "pause" on already-paused media does nothing. Median local latency < 1 s in the log.
 
 ### Phase 2: Open files, folders and apps (weeks 2–3)
-- [ ] Folder aliases: Downloads, Documents, Desktop, Pictures, Videos, and user-defined ones (Known Folder API)
-- [ ] App index: Start Menu `.lnk` files + `shell:AppsFolder` (UWP apps), with aliases ("VS Code" → `Code.exe`). Focus the window if the app is already running, otherwise launch it (FR-12)
-- [ ] File search through Everything, limited to indexed folders, excluding `node_modules`, `.git`, `AppData`, build output and similar (FR-6)
-- [ ] Ranking: rapidfuzz `token_set_ratio` on the filename stem (weighted), parent-folder bonus, recency decay, learned boost from past choices (FR-7)
-- [ ] "Recently opened" boost: resolve `%APPDATA%\Microsoft\Windows\Recent\*.lnk` targets; files the user actually opened rank above lookalikes
-- [ ] Hard excludes in the Everything query: `!C:\Windows\ !AppData\ !ProgramData\ !\target\ !\node_modules\ !\.git\ !D:\PROJECTS\D3\bench\` and so on, plus the indexed-folder whitelist (Phase 0 smoke test showed Prefetch, AppData and build output dominating raw results)
-- [ ] Simple date phrases ("last month's invoice") → Everything `dm:` filter
-- [ ] Disambiguation: if the top two scores are within a margin, speak the top 3 names, enter `AWAITING_CHOICE` (6 s, no wake word), accept first/second/third/cancel (FR-8)
-- [ ] Spoken or toast confirmations: "Opening StoreX proposal" (FR-13)
+- [x] Folder aliases: Desktop, Documents, Downloads, Pictures, Videos, Music via the Known Folder API (follows OneDrive redirection), "<letter> drive", and user aliases in `[folders.aliases]` (`projects` = `D:\PROJECTS`)
+- [x] App index from `Get-StartApps` (172 apps, cached 24 h in `data/apps.json`), aliases ("VS Code" → Visual Studio Code), App Paths fallback for Chrome/Edge/Firefox. If the app already has a window it is focused instead of launched again (FR-12)
+- [x] File search through Everything, scoped to `[search].roots`, with `[search].excludes` for dev junk and system folders (FR-6)
+- [x] Ranking (FR-7): fuzzy per-word coverage of the name (misheard "proposive" still counts), parent-folder words at 0.8 weight ("the D3 plan" → `D3\PLAN.md`), precision, recency, type prior (documents up; code −12; junk −25; anything under `src\`/`main\`/`test\`/dot-folders −15), learned choices (+20), Windows Recent items (+≤10)
+- [x] Date phrases ("last month's", "yesterday's", "this week's"...) are a +20 preference, not a hard filter: a hard `dm:` filter returned only a `.sql` file because no invoice was modified last month
+- [x] Disambiguation: when the runner-up is within `ask_margin` (8), speak the top 3 and listen 6 s without the wake word for first/second/third/one/two/three/cancel (FR-8)
+- [x] Confirmations: chime + on-screen box (bottom right, never takes focus); spoken (SAPI) only for questions (FR-13)
+- [x] `scripts/try_open.py` (score breakdowns) and `scripts/eval_open.py` + `bench/open_cases.txt` for Gate 2
+- [ ] Gate 2: user fills `bench/open_cases.txt` with ~20 real phrases; live test of the "which one?" dialog by voice
 
 **Gate 2:** a test set of 20 real "open …" phrases from the user's own files gets ≥ 85% right first try; disambiguation works end to end.
 

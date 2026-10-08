@@ -1,0 +1,11 @@
+# Gate 2 test set: real "open ..." phrases and what they should open.
+# Format:  phrase | part of the expected path (case-insensitive)
+# Replace the examples below with ~20 things you actually open. Run:
+#   uv run python scripts/eval_open.py
+the d3 plan | D:\PROJECTS\D3\PLAN.md
+dr travel proposal | Dr_Travel_Project_Proposal.pdf
+proposal and budget | Proposal & Budget.pdf
+my downloads | \Downloads
+the projects folder | D:\PROJECTS
+vs code | Visual Studio Code
+spotify | Spotify

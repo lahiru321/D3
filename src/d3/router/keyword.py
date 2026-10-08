@@ -34,6 +34,9 @@ COMMANDS: dict[str, tuple[str, dict]] = {
     "first": (I.CHOOSE, {"n": 1}),
     "second": (I.CHOOSE, {"n": 2}),
     "third": (I.CHOOSE, {"n": 3}),
+    "one": (I.CHOOSE, {"n": 1}),
+    "two": (I.CHOOSE, {"n": 2}),
+    "three": (I.CHOOSE, {"n": 3}),
     "cancel": (I.CANCEL, {}),
     "never mind": (I.CANCEL, {}),
 }

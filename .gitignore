@@ -13,6 +13,7 @@ dist/
 # Local data (logs, recordings, models, secrets)
 logs/
 recordings/
+data/
 models/
 .env
 config.toml

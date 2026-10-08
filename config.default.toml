@@ -28,6 +28,31 @@ whisper_beam = 5
 [volume]
 step = 0.10
 
+[search]
+# Where "open <file>" looks. {name} = Windows known folder (follows OneDrive redirection).
+roots = ['{desktop}', '{documents}', '{downloads}', '{pictures}', '{onedrive}\Pictures', 'D:\']
+# Path fragments never searched (dev junk, system folders).
+excludes = [
+    '\node_modules\', '\.git\', '\.venv\', '\venv\', '\__pycache__\', '\target\', '\build\',
+    '\dist\', '\.next\', '\.gradle\', '\.idea\', '\$RECYCLE.BIN\', '\System Volume Information\',
+    '\Config.Msi\', 'D:\PROJECTS\D3\bench\', 'D:\PROJECTS\D3\recordings\',
+]
+ask_margin = 8          # ask "which one?" when the runner-up scores within this of the best
+min_coverage = 0.6      # share of spoken words that must appear in the name
+
+[folders.aliases]
+# Spoken name = path. Built in: desktop, documents, downloads, pictures, videos, music, "<letter> drive".
+projects = 'D:\PROJECTS'
+
+[apps.aliases]
+# Spoken name = Start menu name, e.g. "browser" = "Google Chrome"
+
+[dialog]
+choice_timeout_ms = 6000  # how long to wait for "first / second / third" without the wake word
+
+[data]
+dir = "data"            # app cache and learned choices (gitignored)
+
 [log]
 dir = "logs"
 # Debugging only: save each captured command as a WAV in recordings/debug/ (local, gitignored).
