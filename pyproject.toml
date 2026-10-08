@@ -10,6 +10,14 @@ dependencies = [
     "faster-whisper>=1.1",
     "rapidfuzz>=3.9",
     "vosk>=0.3.45",
+    "openwakeword>=0.6",
+    "pycaw>=20260927",
+    "comtypes>=1.4.17",
+    "keyboard>=0.13.5",
+    "winrt-runtime>=3.2.1",
+    "winrt-windows-media-control>=3.2.1",
+    "winrt-windows-foundation>=3.2.1",
+    "winrt-windows-foundation-collections>=3.2.1",
 ]
 
 [dependency-groups]
@@ -26,6 +34,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/d3"]
+
+[tool.uv]
+# D3 is Windows-only; resolving for Linux pulls in tflite-runtime, which has no py3.12 wheels.
+environments = ["sys_platform == 'win32'"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

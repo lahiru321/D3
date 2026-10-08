@@ -1,0 +1,34 @@
+# D3 default settings. Override any value in config.toml (same keys, gitignored).
+
+[audio]
+device = ""                 # input device index or name substring; "" = Windows default
+
+[wake]
+model = "hey_jarvis"        # stand-in until the custom "Hey D3" model (Phase 3)
+threshold = 0.5
+hotkey = "`"                # tap to talk without the wake word (fires on key release)
+
+[listen]
+vad_threshold = 0.5
+silence_ms = 600            # trailing silence that ends a command
+max_ms = 6000               # hard cap on a command
+no_speech_timeout_ms = 4000 # give up if nothing is said after the chime
+ignore_after_chime_ms = 160 # don't let the chime itself count as speech
+preroll_ms = 240            # audio kept from before VAD detects speech (VAD fires late)
+duck_to = 0.2               # lower system volume to 20% while listening
+
+[stt]
+vosk_model = "models/vosk-model-small-en-us-0.15"
+vosk_min_conf = 0.9
+whisper_model = "tiny.en"
+whisper_threads = 8
+whisper_beam = 5
+
+[volume]
+step = 0.10
+
+[log]
+dir = "logs"
+# Debugging only: save each captured command as a WAV in recordings/debug/ (local, gitignored).
+# Off by default - D3 normally stores no audio.
+save_audio = false

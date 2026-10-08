@@ -171,15 +171,24 @@ Whisper fails on isolated single words ("resume" → "I see you", "quieter" → 
 Vosk vocabulary gaps are handled by aliases (e.g. "unmute" is heard as "on mute"). Vosk word confidences saturate at 1.0, so the confidence gate rejects little: false matches during video playback must be measured in Phase 3 (record a `video-playing` take). Estimated latency: media commands ≈ endpoint (~500–600 ms) + ~30 ms; open commands ≈ endpoint + ~300 ms + search.
 
 ### Phase 1: Voice demo — media and volume (week 1)
-- [ ] Audio capture + ring buffer; push-to-talk hotkey (FR-2)
-- [ ] openWakeWord with `hey_jarvis` as a stand-in (FR-1); wake chime (FR-13)
-- [ ] VAD endpointing (FR-3, using the ~600 ms rule)
-- [ ] Two-tier transcriber: Vosk closed grammar → Whisper `tiny.en` fallback; confidence gate and hallucination filter (FR-14)
-- [ ] Keyword router: pause/stop/hold on, continue/resume/play, next/skip, previous/go back, volume up/down/louder/quieter, mute/unmute, cancel (FR-4, FR-10)
-- [ ] Media handler: GSMTC current session, state-aware pause/play, next/previous, media-key fallback (FR-9)
-- [ ] Volume handler: ±10%, mute toggle (FR-11)
-- [ ] JSONL command log with per-stage timings (FR-16)
-- [ ] Router unit tests (phrase → intent table)
+- [x] Audio capture (80 ms frames); push-to-talk hotkey `ctrl+alt+space` (FR-2)
+- [x] openWakeWord with `hey_jarvis` as a stand-in (FR-1); wake chime (FR-13)
+- [x] VAD endpointing with openWakeWord's bundled Silero VAD (FR-3, 600 ms rule)
+- [x] Two-tier transcriber: Vosk closed grammar → Whisper `tiny.en` fallback; confidence gate and hallucination filter (FR-14)
+- [x] Keyword router: pause/stop/hold on, continue/resume/play, next/skip, previous/go back, volume up/down/louder/quieter, mute/unmute, cancel (FR-4, FR-10)
+- [x] Media handler: GSMTC, state-aware pause/play across all sessions, next/previous, media-key fallback (FR-9)
+- [x] Volume handler: ±10%, mute/unmute (FR-11)
+- [x] **Moved up from Phase 3:** duck system volume to 20% while listening. Without it, a playing video keeps the VAD "hearing speech" and the command never ends.
+- [x] JSONL command log with per-stage timings (FR-16), in `logs/`
+- [x] Router unit tests (36 cases, including "play some music" must *not* resume)
+- [x] `d3 --text "<command>"` runs a typed command without the mic, for testing handlers
+
+Verified without a live speaker: all 20 of the user's recordings route to the right intent through the real transcriber.
+
+**Live test (2026-10-08):** every command worked in Chrome (YouTube) and Spotify; latency 600–950 ms from end of speech. Two bugs found and fixed:
+- *Clipped word onsets.* VAD fires ~100 ms after a word starts, so capture began mid-word. Vosk then missed it and Whisper hallucinated ("Have a great video", "Good job"). Simulated on the recordings: 11/16 without pre-roll, 16/16 with 160–240 ms. Fix: `preroll_ms = 240`.
+- *Hotkey double-fire* caused a phantom listen after every hotkey command. Fix: trigger on key release and clear presses made mid-command. Hotkey changed to `` ` `` at the user's request.
+- Added opt-in `log.save_audio` to keep captured clips in `recordings/debug/` for diagnosing misses (off by default). Idle while listening: 0.3% total CPU, 419 MB RAM, 1.7 s startup. On-screen toasts are deferred to Phase 2 (with spoken confirmations); Phase 1 gives chimes only.
 
 **Gate 1:** pause/continue/next/volume work 10/10 times on YouTube in Chrome, on VLC and on Spotify. Saying "pause" on already-paused media does nothing. Median local latency < 1 s in the log.
 
