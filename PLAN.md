@@ -230,9 +230,12 @@ Verified without a live speaker: all 20 of the user's recordings route to the ri
 **Gate 3:** 1 hour of YouTube playback gives < 1 false wake. Loose phrasing ("can you bring up the thing I sent to Kamal") resolves via the LLM in < 3 s. Unplugging and replugging the mic recovers without a restart.
 
 ### Phase 4: Tray, packaging and daily use (weeks 5–6)
-- [ ] Tray: mic-active indicator, one-click mute, settings (wake word, mic, voice, indexed folders) (FR-15)
-- [ ] PyInstaller one-folder build, autostart via HKCU `Run` key
-- [ ] Idle resource check: < 5% CPU and < 500 MB RAM while listening
+- [x] Tray (FR-15): green/grey/red icon (listening / paused / no mic), Pause listening, **Microphone** menu listing the input devices connected right now (Core Audio, refreshed every 3 s; choice saved in `data/settings.json`, falls back to the Windows default if unplugged), Start with Windows, Edit settings (opens `config.toml`), Open logs folder, **Turn off D3** (ends the process)
+- [x] **Close apps** (user request): "close Brave", "quit Spotify", "close this". Sends WM_CLOSE like clicking ✕, so apps can still ask to save; never force-kills; refuses the desktop and D3's own console. Also an LLM `close_app` tool.
+- [x] Autostart via HKCU `Run` key → `.venv\Scripts\pythonw.exe -m d3` (no console). Verified it imports and finds config from `C:\Windows\System32`.
+- [x] Single instance (named mutex); Everything started automatically if it isn't running
+- [x] Idle resource check: 0.4% CPU, 434 MB RSS / 357 MB private (Anthropic SDK now loaded on first LLM call: −37 MB)
+- [ ] PyInstaller build: only needed to share D3 with other people (paths for config/data/models must move to `%LOCALAPPDATA%` first). Running from source with autostart covers personal use.
 - [ ] 1 week of daily use, then review against the success metrics
 
 **Gate 4 (v1 done):** ≥ 95% command success, median local latency < 1 s, ≥ 20 commands per day in the log.
