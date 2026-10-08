@@ -5,7 +5,9 @@ choice, which arrives either as a spoken "first / second / third" (pipeline
 thread) or a click on the on-screen list (OSD thread) - hence the lock.
 """
 
+import ctypes
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -16,8 +18,10 @@ from d3.handlers.media import MediaController
 from d3.handlers.volume import VolumeController
 from d3.intents import Intent
 from d3.resolver import Resolver
-from d3.search.apps import launch_or_focus
+from d3.search.apps import AppIndex, close_windows, find_windows, foreground_window, launch_or_focus
 from d3.search.files import Candidate
+
+THIS_WINDOW = {"this", "it", "window", "this window", "this app", "that", "that window", "current window"}
 
 @dataclass
 class Result:
@@ -74,7 +78,31 @@ class Executor:
         if intent.name == I.OPEN:
             self.clear_pending()
             return self._open(intent.args["target"])
+        if intent.name == I.CLOSE:
+            self.clear_pending()
+            return self._close(intent.args["target"])
         return Result(False, f"Unknown intent {intent.name}")
+
+    def _close(self, target: str) -> Result:
+        words = [w for w in re.sub(r"[^a-z0-9 ]+", " ", target.lower()).split() if w not in ("the", "my", "app")]
+        phrase = " ".join(words)
+        if phrase in THIS_WINDOW:
+            hwnd, title = foreground_window()
+            if not hwnd or not title or title == "Program Manager" or hwnd == ctypes.windll.kernel32.GetConsoleWindow():
+                return Result(False, "Nothing to close here")
+            close_windows([hwnd])
+            return Result(True, f"Closing {title}")
+
+        app = self.resolver.apps.find(phrase) if self.resolver else None
+        exe = app.exe if app else AppIndex.fallback_exe(phrase)
+        name = app.name if app else phrase
+        windows = find_windows(exe, app.name if app else "") if (app or exe) else []
+        if not windows and phrase:
+            windows = find_windows(phrase.replace(" ", "") + ".exe", "")  # 'brave' -> brave.exe
+        if not windows:
+            return Result(False, f"{name} isn't open")
+        close_windows(windows)
+        return Result(True, f"Closing {name}" + (f" ({len(windows)} windows)" if len(windows) > 1 else ""))
 
     def _open(self, target: str) -> Result:
         if self.resolver is None:

@@ -13,7 +13,8 @@ MUTE = "mute"
 UNMUTE = "unmute"
 CHOOSE = "choose"   # args: {"n": 1..3}
 CANCEL = "cancel"
-OPEN = "open"       # args: {"target": str}  (Phase 2)
+OPEN = "open"       # args: {"target": str}
+CLOSE = "close"     # args: {"target": str}; "this" = the window in front
 
 
 @dataclass(frozen=True)

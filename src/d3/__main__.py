@@ -40,8 +40,50 @@ def main() -> None:
         run_text(args.text, cfg)
         return
 
+    if not single_instance():
+        print("D3 is already running (see the tray icon).")
+        return
+    ensure_everything(cfg["search"]["everything_exe"])
+
     from d3.app import Assistant
     Assistant(cfg).run()
+
+
+ERROR_ALREADY_EXISTS = 183
+
+
+def single_instance() -> bool:
+    """False if another D3 is running: with 'Start with Windows' plus a manual start,
+    two copies would both react to every command."""
+    import ctypes
+
+    global _mutex  # keep the handle for the life of the process
+    _mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\D3VoiceAssistant")
+    return ctypes.windll.kernel32.GetLastError() != ERROR_ALREADY_EXISTS
+
+
+def ensure_everything(exe: str) -> None:
+    """File search needs the Everything app running; start it in the tray if it isn't."""
+    import os
+    import time
+
+    from d3.search.everything import Everything, EverythingError
+
+    try:
+        Everything().version()
+        return
+    except (OSError, EverythingError):
+        pass
+    if not os.path.exists(exe):
+        return
+    os.startfile(exe, arguments="-startup")
+    for _ in range(20):
+        time.sleep(0.25)
+        try:
+            Everything().version()
+            return
+        except EverythingError:
+            continue
 
 
 if __name__ == "__main__":

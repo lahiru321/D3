@@ -33,6 +33,9 @@ from d3.router.keyword import normalize, route
     ("Open the StoreX proposal.", I.OPEN, {"target": "the storex proposal"}),
     ("launch VS Code", I.OPEN, {"target": "vs code"}),
     ("show me my downloads", I.OPEN, {"target": "my downloads"}),
+    ("Close Brave.", I.CLOSE, {"target": "brave"}),
+    ("quit spotify", I.CLOSE, {"target": "spotify"}),
+    ("close this window", I.CLOSE, {"target": "this window"}),
 ])
 def test_routes(text, name, args):
     intent = route(text)

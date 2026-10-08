@@ -142,8 +142,8 @@ def _window_title(hwnd) -> str:
     return buf.value
 
 
-def find_window(exe: str | None, title_hint: str) -> int | None:
-    """First visible top-level window owned by `exe`, or whose title ends with the app name."""
+def find_windows(exe: str | None, title_hint: str) -> list[int]:
+    """Visible top-level windows owned by `exe`, or whose title ends with the app name."""
     found: list[int] = []
     hint = title_hint.lower()
 
@@ -151,13 +151,17 @@ def find_window(exe: str | None, title_hint: str) -> int | None:
     def callback(hwnd, _lparam):
         if user32.IsWindowVisible(hwnd) and user32.GetWindow(hwnd, 4) == 0:  # visible, unowned
             title = _window_title(hwnd)
-            if title and ((exe and _window_exe(hwnd) == exe) or title.lower().endswith(hint)):
+            if title and ((exe and _window_exe(hwnd) == exe) or (hint and title.lower().endswith(hint))):
                 found.append(hwnd)
-                return False
         return True
 
     user32.EnumWindows(callback, 0)
-    return found[0] if found else None
+    return found
+
+
+def find_window(exe: str | None, title_hint: str) -> int | None:
+    windows = find_windows(exe, title_hint)
+    return windows[0] if windows else None
 
 
 def focus_window(hwnd: int) -> None:
@@ -167,6 +171,20 @@ def focus_window(hwnd: int) -> None:
     user32.keybd_event(VK_MENU, 0, 0, 0)
     user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
     user32.SetForegroundWindow(hwnd)
+
+
+WM_CLOSE = 0x0010
+
+
+def close_windows(windows: list[int]) -> None:
+    """Ask windows to close, exactly like clicking X: apps can still prompt to save. Never force-kills."""
+    for hwnd in windows:
+        user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+
+
+def foreground_window() -> tuple[int, str]:
+    hwnd = user32.GetForegroundWindow()
+    return hwnd, _window_title(hwnd) if hwnd else ""
 
 
 def launch_or_focus(app: App) -> str:

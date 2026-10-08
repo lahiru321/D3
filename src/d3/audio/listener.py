@@ -58,17 +58,43 @@ class Listener:
         self._press_time = 0.0
         self._release_time = 0.0
         self._stream: sd.InputStream | None = None
+        self._stream_lock = threading.RLock()  # the tray (device switch) and the pipeline (recovery) both reopen
+        self.paused = threading.Event()        # tray "Pause listening": ignore wake word and push-to-talk
 
     @staticmethod
     def _pick_device(spec) -> int | None:
+        """Device index for a name from the tray/config; None = Windows default. If the named mic
+        isn't connected, fall back to the default instead of failing."""
         if spec in ("", None):
             return None
         if isinstance(spec, int) or str(spec).isdigit():
             return int(spec)
-        for idx, dev in enumerate(sd.query_devices()):
-            if dev["max_input_channels"] > 0 and str(spec).lower() in dev["name"].lower():
+        wanted = str(spec).lower()
+        for idx, dev in enumerate(sd.query_devices()):  # MME devices come first and resample to 16 kHz
+            name = dev["name"].lower()
+            # MME truncates names to 31 characters, so accept a prefix match too.
+            if dev["max_input_channels"] > 0 and (wanted in name or (len(name) >= 20 and wanted.startswith(name))):
                 return idx
-        raise ValueError(f"No input device matching {spec!r}")
+        return None
+
+    @property
+    def device_spec(self) -> str:
+        return self._device_spec or ""
+
+    @property
+    def device_name(self) -> str:
+        """Name of the mic actually in use."""
+        try:
+            index = self._device if self._device is not None else sd.default.device[0]
+            return sd.query_devices(index)["name"]
+        except (sd.PortAudioError, ValueError):
+            return "no microphone"
+
+    def set_device(self, spec: str) -> bool:
+        """Switch microphone ('' = Windows default) without restarting D3."""
+        with self._stream_lock:
+            self._device_spec = spec
+            return self.recover()
 
     # Called from the keyboard hook thread.
     def ptt_press(self) -> None:
@@ -95,20 +121,21 @@ class Listener:
     def recover(self) -> bool:
         """Called when no audio has arrived for a while (mic unplugged, driver reset).
         Re-scans devices and reopens the stream; returns True once audio flows again."""
-        try:
-            if self._stream is not None:
-                self._stream.close()
-        except sd.PortAudioError:
-            pass
-        self._stream = None
-        try:
-            sd._terminate()   # PortAudio only sees new/removed devices after re-initialising
-            sd._initialize()
-            self._device = self._pick_device(self._device_spec)
-            self.start()
-            return True
-        except (sd.PortAudioError, ValueError):
-            return False
+        with self._stream_lock:
+            try:
+                if self._stream is not None:
+                    self._stream.close()
+            except sd.PortAudioError:
+                pass
+            self._stream = None
+            try:
+                sd._terminate()   # PortAudio only sees new/removed devices after re-initialising
+                sd._initialize()
+                self._device = self._pick_device(self._device_spec)
+                self.start()
+                return True
+            except (sd.PortAudioError, ValueError):
+                return False
 
     def _on_audio(self, indata, frames, time_info, status) -> None:
         try:
@@ -126,8 +153,11 @@ class Listener:
         mic_lost = False
         while True:
             if self._ptt_down.is_set():
-                self._wake.reset()
-                return "ptt", 0.0
+                if self.paused.is_set():
+                    self._ptt_down.clear()
+                else:
+                    self._wake.reset()
+                    return "ptt", 0.0
             try:
                 stamped = self._next_frame()
             except queue.Empty:
@@ -143,6 +173,8 @@ class Listener:
                 mic_lost = False
                 if on_mic_change:
                     on_mic_change(False)
+            if self.paused.is_set():
+                continue  # keep the stream drained, but don't listen
             self._recent.append(stamped)
             score = float(self._wake.predict(stamped[1])[self._wake_name])
             if score >= self._wake_threshold:

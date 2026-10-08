@@ -58,6 +58,7 @@ def add_aliases(aliases: dict[str, str]) -> None:
 
 
 OPEN_RE = re.compile(r"^(?:open|launch|start|show me|show)\s+(?P<target>.+)$")
+CLOSE_RE = re.compile(r"^(?:close|quit|exit)\s+(?P<target>.+)$")
 
 FUZZY_CUTOFF = 85
 
@@ -78,6 +79,9 @@ def route(text: str, fuzzy: bool = True) -> Intent | None:
     m = OPEN_RE.match(norm)
     if m:
         return Intent(I.OPEN, {"target": m.group("target")}, text=text)
+    m = CLOSE_RE.match(norm)
+    if m:
+        return Intent(I.CLOSE, {"target": m.group("target")}, text=text)
 
     core = " ".join(w for w in norm.split() if w not in FILLER) or norm
     if core in COMMANDS:

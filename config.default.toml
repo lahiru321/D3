@@ -37,7 +37,8 @@ excludes = [
     '\dist\', '\.next\', '\.gradle\', '\.idea\', '\$RECYCLE.BIN\', '\System Volume Information\',
     '\Config.Msi\', 'D:\PROJECTS\D3\bench\', 'D:\PROJECTS\D3\recordings\',
 ]
-ask_margin = 8          # ask "which one?" when the runner-up scores within this of the best
+everything_exe = 'C:\Program Files\Everything\Everything.exe'  # started automatically if not running
+ask_margin = 8         # ask "which one?" when the runner-up scores within this of the best
 min_coverage = 0.6      # share of spoken words that must appear in the name
 
 [folders.aliases]

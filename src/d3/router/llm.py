@@ -15,8 +15,6 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-import anthropic
-
 from d3 import intents as I
 from d3.intents import Intent
 
@@ -43,6 +41,8 @@ def _tool(name: str, description: str, properties: dict) -> dict:
 TOOLS = [
     _tool("open_item", "Open a file, folder or installed app on this PC, or switch to the app if it is open.",
           {"target": {"type": "string", "description": "What to open, e.g. 'lumora folder', 'last month's invoice', 'VS Code'"}}),
+    _tool("close_app", "Close an app's windows (like clicking X), or the window in front when target is 'this'.",
+          {"target": {"type": "string", "description": "App name as in the Start menu, e.g. 'Brave', or 'this'"}}),
     _tool("media_control", "Control whatever media is playing (video or music).",
           {"action": {"type": "string", "enum": ["pause", "resume", "next", "previous"]}}),
     _tool("set_volume", "Change the system volume.",
@@ -99,12 +99,17 @@ class LlmRouter:
         self._cap = cfg["daily_call_cap"]
         self._ledger = ledger
         self._system = SYSTEM.format(names=", ".join(names))
-        # No retries: a slow or failed fallback should fail fast, and retries would cost twice.
-        self._client = anthropic.Anthropic(timeout=cfg["timeout_s"], max_retries=0)
+        self._timeout = cfg["timeout_s"]
+        self._client = None  # created on first use: the SDK adds ~37 MB, and most days need few calls
 
     def route(self, text: str) -> LlmResult:
         if self._ledger.today()["calls"] >= self._cap:
             return LlmResult(None, f"daily LLM cap reached ({self._cap} calls)")
+        import anthropic
+
+        if self._client is None:
+            # No retries: a slow or failed fallback should fail fast, and retries would cost twice.
+            self._client = anthropic.Anthropic(timeout=self._timeout, max_retries=0)
         t0 = time.perf_counter()
         try:
             response = self._client.messages.create(
@@ -152,6 +157,10 @@ class LlmRouter:
             if not isinstance(args["target"], str) or not args["target"].strip():
                 return None
             return Intent(I.OPEN, {"target": args["target"]}, source="llm", text=text)
+        if name == "close_app":
+            if not isinstance(args["target"], str) or not args["target"].strip():
+                return None
+            return Intent(I.CLOSE, {"target": args["target"]}, source="llm", text=text)
         if name == "media_control":
             return Intent(MEDIA[args["action"]], source="llm", text=text)
         if name == "set_volume":

@@ -16,12 +16,14 @@ from d3.config import resolve
 from d3.executor import Executor, Result
 from d3.feedback import sounds
 from d3.feedback.osd import Osd
+from d3.feedback.tray import Tray
 from d3.handlers.media import MediaController
 from d3.handlers.volume import VolumeController
 from d3.log import CommandLog
 from d3.resolver import Resolver
 from d3.router import keyword
 from d3.router.llm import LlmRouter, UsageLedger
+from d3.settings import Settings
 from d3.stt.transcriber import Transcriber
 
 MODIFIERS = ("ctrl", "shift", "alt", "windows")
@@ -48,8 +50,12 @@ class Assistant:
         print("Loading models...")
         t0 = time.perf_counter()
         keyword.add_aliases(cfg.get("commands", {}).get("aliases", {}))
+        self.settings = Settings(resolve(cfg["data"]["dir"]) / "settings.json")
         self.transcriber = Transcriber(cfg["stt"], list(keyword.COMMANDS), resolve(cfg["stt"]["vosk_model"]))
-        self.listener = Listener(cfg["audio"], cfg["wake"], cfg["listen"])
+        # A microphone picked in the tray wins over config.
+        audio_cfg = dict(cfg["audio"], device=self.settings.get("audio_device", cfg["audio"]["device"]))
+        self.listener = Listener(audio_cfg, cfg["wake"], cfg["listen"])
+        self.mic_lost = False
         self.media = MediaController()
         self.volume = VolumeController(cfg["volume"]["step"])
         self.resolver = Resolver(cfg)
@@ -63,6 +69,7 @@ class Assistant:
         self.log = CommandLog(resolve(cfg["log"]["dir"]))
         self._debug_dir = resolve("recordings/debug")
         self._stop = threading.Event()
+        self.tray: Tray | None = None
         print(f"Ready in {time.perf_counter() - t0:.1f} s")
 
     def _make_llm(self, cfg: dict) -> LlmRouter | None:
@@ -78,13 +85,16 @@ class Assistant:
         return LlmRouter(llm_cfg, ledger, self.resolver.hint_names())
 
     def run(self) -> None:
-        """Blocks until Ctrl+C. The pipeline runs on a worker thread (the main thread is kept for the tray later)."""
+        """Blocks until Ctrl+C or Turn off. The pipeline runs on a worker thread, the tray on its own."""
         ptt_key = self.cfg["wake"]["ptt_key"]
         register_ptt(ptt_key, self.listener.ptt_press, self.listener.ptt_release)
         self.listener.start()
         worker = threading.Thread(target=self._loop, name="d3-pipeline", daemon=True)
         worker.start()
-        print(f"Listening. Say \"hey jarvis\" then a command, or hold {ptt_key} while you speak. Ctrl+C quits.")
+        self.tray = Tray(self)
+        self.tray.start()
+        print(f"Listening on {self.listener.device_name}. Say \"hey jarvis\" then a command, "
+              f"or hold {ptt_key} while you speak. Ctrl+C or the tray's Turn off quits.")
         if self.cfg["log"]["save_audio"]:
             print(f"Debug: saving every command's audio to {self._debug_dir}")
         try:
@@ -93,10 +103,42 @@ class Assistant:
         except KeyboardInterrupt:
             pass
         finally:
-            self._stop.set()
+            self.shutdown()
+
+    def shutdown(self) -> None:
+        self._stop.set()
+        self.volume.restore()
+        self.listener.stop()
+        keyboard.unhook_all()
+        if self.tray is not None:
+            self.tray.stop()
+
+    def turn_off(self) -> None:
+        """Tray 'Turn off D3': clean up, then end the process at once (threads may be blocked in audio calls)."""
+        print("Turning off.")
+        self.log.write(event="turn_off")
+        try:
+            self.shutdown()
+        finally:
+            os._exit(0)
+
+    def set_paused(self, paused: bool) -> None:
+        if paused:
+            self.listener.paused.set()
             self.volume.restore()
-            self.listener.stop()
-            keyboard.unhook_all()
+        else:
+            self.listener.paused.clear()
+        self.osd.show("Listening paused" if paused else "Listening again", "info")
+        self.log.write(event="paused" if paused else "resumed")
+
+    def choose_microphone(self, name: str) -> bool:
+        """From the tray: switch now and remember it ('' = Windows default)."""
+        ok = self.listener.set_device(name)
+        self.settings.set("audio_device", name)
+        if ok:
+            self.osd.show(f"Microphone: {self.listener.device_name}", "info")
+        self.log.write(event="microphone", chosen=name, using=self.listener.device_name, ok=ok)
+        return ok
 
     def _loop(self) -> None:
         comtypes.CoInitialize()  # pycaw needs COM on this thread
@@ -113,6 +155,7 @@ class Assistant:
         self.volume.duck(self.cfg["listen"]["duck_to"])
 
     def _on_mic_change(self, lost: bool) -> None:
+        self.mic_lost = lost
         message = "Microphone disconnected: waiting for it" if lost else "Microphone reconnected"
         print(f"  ! {message}")
         self.osd.show(message, "error" if lost else "ok")
