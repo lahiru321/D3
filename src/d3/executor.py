@@ -89,7 +89,7 @@ class Executor:
             os.startfile(res.exe)
             return Result(True, f"Opening {target}")
         if res.kind == R.FILE:
-            result = self._open_candidate(res.candidates[0], res.words)
+            result = self._open_candidate(res.candidates[0])
             if res.note:  # e.g. corrected spelling: show what was matched
                 result.message += f"  ({res.note})"
             return result
@@ -109,12 +109,15 @@ class Executor:
             return Result(False, f"There are only {len(self._pending)} options")
         candidate, words = self._pending[n - 1], self._pending_words
         self.clear_pending()
-        return self._open_candidate(candidate, words)
+        result = self._open_candidate(candidate)
+        # Learn only from explicit picks: recording D3's own guesses would reinforce wrong ones.
+        if result.ok and self.resolver is not None:
+            self.resolver.memory.record(words, candidate.path)
+        return result
 
-    def _open_candidate(self, candidate: Candidate, words: list[str]) -> Result:
+    @staticmethod
+    def _open_candidate(candidate: Candidate) -> Result:
         if not candidate.path.exists():
             return Result(False, f"{candidate.path.name} no longer exists")
         os.startfile(candidate.path)
-        if self.resolver is not None:
-            self.resolver.memory.record(words, candidate.path)
         return Result(True, f"Opening {candidate.path.name}")

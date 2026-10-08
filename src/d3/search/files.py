@@ -62,6 +62,10 @@ CODE_TREE = {"src", "test", "tests", "main", "java", "resources", "lib", "migrat
 CODE_TREE_PENALTY = -15
 FOLDER_PENALTY = -6   # "open the invoice" usually means a file; saying "folder" flips this to a bonus
 
+EXACT_NAME_BONUS = 15   # the name is exactly the spoken words ('lumora' -> D:\Lumora, not 'Lumora technologies.png')
+TOP_FOLDER_BONUS = 3    # per level a folder is nearer the top of its drive (D:\Lumora over Documents\LUMORA)
+TOP_FOLDER_LEVELS = 3
+
 PARENT_WEIGHT = 0.8   # a spoken word found only in a parent folder name ('the D3 plan' -> D3\PLAN.md)
 PARENT_LEVELS = 3
 DATE_BONUS = 20
@@ -290,9 +294,12 @@ class FileSearch:
             if in_code_tree:
                 type_prior += CODE_TREE_PENALTY
             in_period = DATE_BONUS if period and r.modified and period[0] <= r.modified < period[1] else 0
+            stem = r.path.name if r.is_folder else r.path.stem
+            exact = EXACT_NAME_BONUS if q.words and not in_code_tree and sorted(re.sub(r"[^a-z0-9]+", " ", stem.lower()).split()) == sorted(q.words) else 0
+            top = (TOP_FOLDER_BONUS * max(0, TOP_FOLDER_LEVELS + 1 - len(r.path.parents))) if r.is_folder else 0
             c.parts = {"cover": round(70 * c.coverage, 1), "prec": round(15 * precision, 1),
                        "recent": round(recency, 1), "opened": round(recent_boost, 1), "learned": learned,
-                       "type": type_prior, "date": in_period}
+                       "type": type_prior, "date": in_period, "exact": exact, "top": top}
             c.score = sum(c.parts.values())
             ranked.append(c)
         ranked.sort(key=lambda c: c.score, reverse=True)

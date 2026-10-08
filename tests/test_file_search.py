@@ -96,6 +96,19 @@ def test_folder_word_prefers_folders(tmp_path):
     assert top(fs, "lumora", results).name == "lumora.pdf"
 
 
+def test_exact_top_level_folder_beats_files_containing_the_word(tmp_path):
+    # Live bug: "open lumora" opened 'Lumora technologies.png' instead of D:\Lumora.
+    fs = ranker(tmp_path)
+    results = [
+        SearchResult(Path(r"D:\Lumora\Lumora technologies.png"), days_ago(3)),
+        SearchResult(Path(r"C:\Users\User\Documents\LUMORA"), days_ago(1), is_folder=True),
+        SearchResult(Path(r"D:\Lumora"), days_ago(1), is_folder=True),
+    ]
+    assert top(fs, "lumora", results) == Path(r"D:\Lumora")
+    assert top(fs, "lumora folder", results) == Path(r"D:\Lumora")
+    assert top(fs, "lumora technologies", results).name == "Lumora technologies.png"
+
+
 @pytest.mark.parametrize("target, expected", [
     ("my downloads", "Downloads"),
     ("the desktop", "Desktop"),

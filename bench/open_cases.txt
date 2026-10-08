@@ -9,7 +9,7 @@ my downloads | \Downloads
 the projects folder | D:\PROJECTS
 vs code | Visual Studio Code
 spotify | Spotify
-Lumora folder | D:\Lumora
+Lumora | D:\Lumora
 Chrome | Chrome
 D folder | D:\
 Whatsapp | Whatsapp
