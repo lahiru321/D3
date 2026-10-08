@@ -90,6 +90,12 @@ class Listener:
         except (sd.PortAudioError, ValueError):
             return "no microphone"
 
+    @property
+    def on_fallback(self) -> bool:
+        """True if a specific mic was chosen but isn't connected, so the Windows default is in use
+        (e.g. a USB mic that shows up a few seconds after login)."""
+        return bool(self._device_spec) and self._device is None
+
     def set_device(self, spec: str) -> bool:
         """Switch microphone ('' = Windows default) without restarting D3."""
         with self._stream_lock:

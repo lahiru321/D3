@@ -89,8 +89,11 @@ class Assistant:
         """Blocks until Ctrl+C or Turn off. The pipeline runs on a worker thread, the tray on its own."""
         ptt_key = self.cfg["wake"]["ptt_key"]
         register_ptt(ptt_key, self.listener.ptt_press, self.listener.ptt_release)
-        self.listener.start()
-        worker = threading.Thread(target=self._loop, name="d3-pipeline", daemon=True)
+        try:
+            self.listener.start()
+        except Exception as exc:  # right after login the mic/audio service may not be ready yet:
+            print(f"  ! Microphone not ready ({exc}): retrying")  # the pipeline's recovery keeps retrying
+        worker =threading.Thread(target=self._loop, name="d3-pipeline", daemon=True)
         worker.start()
         self.tray = Tray(self)
         self.tray.start()

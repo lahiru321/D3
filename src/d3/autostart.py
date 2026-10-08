@@ -13,7 +13,7 @@ def command() -> str:
     if getattr(sys, "frozen", False):  # packaged D3.exe
         return f'"{exe}"'
     pythonw = exe.with_name("pythonw.exe")  # no console window
-    return f'"{pythonw if pythonw.exists() else exe}" -m d3'
+    return f'"{pythonw if pythonw.exists() else exe}" -m d3 --background'
 
 
 def is_enabled() -> bool:

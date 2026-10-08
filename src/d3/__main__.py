@@ -5,6 +5,8 @@
 """
 
 import argparse
+import ctypes
+import sys
 
 
 def run_text(texts: list[str], cfg: dict) -> None:
@@ -33,6 +35,8 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(prog="d3", description="D3 voice-controlled desktop assistant")
     parser.add_argument("--text", action="append", help="run a typed command instead of listening (repeatable)")
+    parser.add_argument("--background", action="store_true",
+                        help="no console: log to logs/d3.log (desktop shortcut, Start with Windows)")
     args = parser.parse_args()
     cfg = load_config()
 
@@ -40,8 +44,19 @@ def main() -> None:
         run_text(args.text, cfg)
         return
 
+    # The venv's pythonw.exe is a launcher that starts python.exe, which may get a console
+    # window; --background hides it, and pythonw output would otherwise be lost.
+    windowless = args.background or sys.stdout is None
+    if windowless:
+        console = ctypes.windll.kernel32.GetConsoleWindow()
+        if console:
+            ctypes.windll.user32.ShowWindow(console, SW_HIDE)
+        log_to_file(cfg)
     if not single_instance():
         print("D3 is already running (see the tray icon).")
+        if windowless:
+            ctypes.windll.user32.MessageBoxW(None, "D3 is already running: look for its icon in the tray.",
+                                             "D3", MB_ICONINFORMATION)
         return
     ensure_everything(cfg["search"]["everything_exe"])
 
@@ -50,13 +65,32 @@ def main() -> None:
 
 
 ERROR_ALREADY_EXISTS = 183
+MB_ICONINFORMATION = 0x40
+SW_HIDE = 0
+
+
+def log_to_file(cfg: dict) -> None:
+    """pythonw has no console and silently drops output, including the traceback if D3
+    crashes. Send both to logs/d3.log so a failed start leaves a trace."""
+    from datetime import datetime
+
+    from d3.config import resolve
+
+    log_dir = resolve(cfg["log"]["dir"])
+    log_dir.mkdir(parents=True, exist_ok=True)
+    path = log_dir / "d3.log"
+    try:
+        if path.stat().st_size > 1_000_000:  # keep one old copy, ~2 MB at most
+            path.replace(log_dir / "d3.old.log")
+    except OSError:  # no log yet, or a running D3 has it open
+        pass
+    sys.stdout = sys.stderr = open(path, "a", encoding="utf-8", buffering=1)
+    print(f"\n=== D3 starting {datetime.now():%Y-%m-%d %H:%M:%S} ===")
 
 
 def single_instance() -> bool:
     """False if another D3 is running: with 'Start with Windows' plus a manual start,
     two copies would both react to every command."""
-    import ctypes
-
     global _mutex  # keep the handle for the life of the process
     _mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\D3VoiceAssistant")
     return ctypes.windll.kernel32.GetLastError() != ERROR_ALREADY_EXISTS

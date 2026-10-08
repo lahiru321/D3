@@ -24,15 +24,16 @@ COLORS = {"listening": "#2e9e5b", "paused": "#7a7f87", "no mic": "#c0392b"}
 REFRESH_S = 3.0
 
 
-def _icon_image(state: str) -> Image.Image:
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+def _icon_image(state: str, size: int = 64) -> Image.Image:
+    s = size / 64  # drawn on a 64 px grid; the desktop shortcut uses a bigger one
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.ellipse((2, 2, 62, 62), fill=COLORS[state])
+    draw.ellipse((2 * s, 2 * s, 62 * s, 62 * s), fill=COLORS[state])
     try:
-        font = ImageFont.truetype("segoeuib.ttf", 26)
+        font = ImageFont.truetype("segoeuib.ttf", round(26 * s))
     except OSError:
         font = ImageFont.load_default()
-    draw.text((32, 33), "D3", fill="white", font=font, anchor="mm")
+    draw.text((32 * s, 33 * s), "D3", fill="white", font=font, anchor="mm")
     return img
 
 
@@ -70,6 +71,11 @@ class Tray:
                 devices = active_inputs()
             except OSError:
                 devices = self._devices
+            listener = self._a.listener
+            if (devices != self._devices and listener.on_fallback
+                    and any(listener.device_spec.lower() in d.name.lower() for d in devices)):
+                listener.set_device(listener.device_spec)  # the chosen mic just appeared: switch back to it
+                self._state = ""  # refresh the title with the new mic
             state = self._current_state()
             if devices != self._devices or state != self._state:
                 self._devices, self._state = devices, state
