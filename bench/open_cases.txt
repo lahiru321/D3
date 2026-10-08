@@ -3,9 +3,18 @@
 # Replace the examples below with ~20 things you actually open. Run:
 #   uv run python scripts/eval_open.py
 the d3 plan | D:\PROJECTS\D3\PLAN.md
-dr travel proposal | Dr_Travel_Project_Proposal.pdf
-proposal and budget | Proposal & Budget.pdf
+Documents Folder | \Documents
+Image folder | \Image
 my downloads | \Downloads
 the projects folder | D:\PROJECTS
 vs code | Visual Studio Code
 spotify | Spotify
+Lumora folder | D:\Lumora
+Chrome | Chrome
+D folder | D:\
+Whatsapp | Whatsapp
+Claude | Claude
+Brave | Brave
+Valorant | Valorant
+Valheim | Valheim
+Steam | Steam

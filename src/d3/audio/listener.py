@@ -153,9 +153,9 @@ class Listener:
         audio = np.concatenate(chunks) if chunks else None
         return Utterance(audio, "ptt", 0.0, end, 0.0)
 
-    def capture_command(self, trigger: str, score: float, cfg: dict | None = None) -> Utterance:
-        """Wake-word / follow-up path: VAD start/end detection. `cfg` overrides the listen settings."""
-        cfg = cfg or self._cfg
+    def capture_command(self, trigger: str, score: float) -> Utterance:
+        """Wake-word path: VAD start/end detection."""
+        cfg = self._cfg
         skip_frames = cfg["ignore_after_chime_ms"] // FRAME_MS
         silence_needed = cfg["silence_ms"] // FRAME_MS
         max_frames = cfg["max_ms"] // FRAME_MS

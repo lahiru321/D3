@@ -50,12 +50,19 @@ class Transcriber:
         self._whisper = WhisperModel(cfg["whisper_model"], device="cpu", compute_type="int8",
                                      cpu_threads=cfg["whisper_threads"])
         self._beam = cfg["whisper_beam"]
+        self._prompt = INITIAL_PROMPT
         # Warm-up so the first real command isn't slow.
         list(self._whisper.transcribe(np.zeros(16_000, dtype=np.float32), language="en")[0])
 
     @property
     def grammar(self) -> list[str]:
         return list(self._grammar)
+
+    def set_names(self, names: list[str]) -> None:
+        """Bias Whisper toward the user's folder and app names. Without this, tiny.en heard
+        'Lumora' as 'Lumura' on every test clip; with it, all clips were right. Names go
+        last: faster-whisper keeps the end of an over-long prompt."""
+        self._prompt = INITIAL_PROMPT + " Names: " + ", ".join(names) + "."
 
     def transcribe(self, audio: np.ndarray) -> Transcript:
         """audio: int16 mono at 16 kHz."""
@@ -79,7 +86,7 @@ class Transcriber:
         segments, _ = self._whisper.transcribe(
             audio.astype(np.float32) / 32768.0, language="en", beam_size=self._beam,
             without_timestamps=True, condition_on_previous_text=False,
-            initial_prompt=INITIAL_PROMPT, max_new_tokens=24,
+            initial_prompt=self._prompt, max_new_tokens=24,
         )
         segments = list(segments)
         text = " ".join(s.text for s in segments).strip()

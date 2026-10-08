@@ -1,6 +1,7 @@
 """Spoken folder names -> paths: Windows known folders, drives, and user aliases."""
 
 import ctypes
+import os
 import re
 import uuid
 from ctypes import wintypes
@@ -25,7 +26,8 @@ SPOKEN = {
     "desktop": "desktop",
     "documents": "documents", "document": "documents", "docs": "documents",
     "downloads": "downloads", "download": "downloads",
-    "pictures": "pictures", "picture": "pictures", "photos": "pictures", "images": "pictures",
+    "pictures": "pictures", "picture": "pictures", "photos": "pictures", "photo": "pictures",
+    "images": "pictures", "image": "pictures",
     "videos": "videos", "video": "videos",
     "music": "music",
 }
@@ -84,8 +86,35 @@ def resolve_folder(target: str, aliases: dict[str, str]) -> Path | None:
     if phrase in SPOKEN:
         return known_folder(SPOKEN[phrase])
 
-    m = re.fullmatch(r"([a-z]) drive", phrase)
+    m = re.fullmatch(r"([a-z])(?: drive)?", phrase)  # "D drive", "D folder", or Whisper's bare "D."
     if m:
         drive = Path(f"{m.group(1).upper()}:\\")
         return drive if drive.exists() else None
     return None
+
+
+HASHY = re.compile(r"^[0-9a-f]{8,}$|^\d+$")
+
+
+def folder_names(roots: list[Path], excludes: list[str], depth: int = 2) -> list[str]:
+    """Names of folders near the top of each root: the words people say ("Lumora", "PROJECTS")."""
+    names: list[str] = []
+    frontier = list(roots)
+    for _ in range(depth):
+        next_level = []
+        for folder in frontier:
+            try:
+                entries = list(os.scandir(folder))
+            except OSError:
+                continue
+            for entry in entries:
+                name = entry.name
+                if (not entry.is_dir(follow_symlinks=False) or name.startswith((".", "$", "_"))
+                        or HASHY.match(name.lower()) or any(e.strip("\\").lower() in entry.path.lower() + "\\"
+                                                           for e in excludes)):
+                    continue
+                if name not in names:
+                    names.append(name)
+                next_level.append(Path(entry.path))
+        frontier = next_level
+    return names

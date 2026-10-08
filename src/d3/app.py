@@ -15,7 +15,6 @@ from d3.config import resolve
 from d3.executor import Executor, Result
 from d3.feedback import sounds
 from d3.feedback.osd import Osd
-from d3.feedback.speaker import Speaker
 from d3.handlers.media import MediaController
 from d3.handlers.volume import VolumeController
 from d3.log import CommandLog
@@ -53,9 +52,10 @@ class Assistant:
         self.resolver = Resolver(cfg)
         if self.resolver.files is None:
             print("  ! Everything isn't running: file search disabled (folders and apps still work)")
-        self.executor = Executor(self.media, self.volume, self.resolver)
+        self.transcriber.set_names(self.resolver.hint_names())
+        self.executor = Executor(self.media, self.volume, self.resolver,
+                                 choice_timeout_s=cfg["dialog"]["choice_timeout_ms"] / 1000)
         self.osd = Osd()
-        self.speaker: Speaker | None = None  # created on the pipeline thread (COM)
         self.log = CommandLog(resolve(cfg["log"]["dir"]))
         self._debug_dir = resolve("recordings/debug")
         self._stop = threading.Event()
@@ -83,8 +83,7 @@ class Assistant:
             keyboard.unhook_all()
 
     def _loop(self) -> None:
-        comtypes.CoInitialize()  # pycaw and SAPI need COM on this thread
-        self.speaker = Speaker()
+        comtypes.CoInitialize()  # pycaw needs COM on this thread
         while not self._stop.is_set():
             try:
                 self._handle_one()
@@ -112,29 +111,16 @@ class Assistant:
             print(f"\n> wake ({score:.2f})")
             utt = self.listener.capture_command(trigger, score)
 
-        result = self._process(utt, trigger, score)
-        # "Which one?": ask, then listen for the answer without the wake word.
-        while result is not None and result.question and self.executor.awaiting_choice:
-            result = self._follow_up(result.question)
+        self._process(utt, trigger, score)
 
-    def _follow_up(self, question: str) -> Result | None:
-        self.volume.restore()
-        print(f"  ? {question}")
-        self.speaker.say(question)
-        self._duck()
-        self.listener.drain()  # don't transcribe D3's own voice
-        cfg = dict(self.cfg["listen"], no_speech_timeout_ms=self.cfg["dialog"]["choice_timeout_ms"])
-        utt = self.listener.capture_command("follow_up", 0.0, cfg=cfg)
-        if utt.audio is None:
-            self.volume.restore()
-            self.executor.clear_pending()
-            self.osd.show("No answer: cancelled", "info")
-            print("  (no answer: cancelled)")
-            return None
-        result = self._process(utt, "follow_up", 0.0)
-        if result is not None and self.executor.awaiting_choice and not result.question:
-            self.executor.clear_pending()  # answered with something else: drop the old options
-        return result
+    def _on_click_choice(self, n: int) -> None:
+        """A row of the 'which one?' list was clicked (runs on the OSD thread)."""
+        result = self.executor.run(I.Intent(I.CHOOSE, {"n": n}, text=f"<click {n}>"))
+        sounds.play("ok" if result.ok else "error")
+        self.osd.show(result.message, "ok" if result.ok else "error")
+        print(f"  {'OK' if result.ok else 'X '} clicked {n}: {result.message}")
+        self.log.write(event="command", trigger="click", text=f"<click {n}>", intent=I.CHOOSE, args={"n": n},
+                       ok=result.ok, result=result.message)
 
     def _process(self, utt: Utterance, trigger: str, score: float) -> Result | None:
         if utt.audio is None:
@@ -160,7 +146,9 @@ class Assistant:
         done = time.perf_counter()
 
         sounds.play("ok" if result.ok else "error")
-        if not result.question:
+        if result.choices:
+            self.osd.show_choices("Which one?", result.choices, self._on_click_choice, self.executor.choice_timeout_s)
+        else:
             self.osd.show(result.message, "ok" if result.ok else "error")
         latency_ms = (done - utt.speech_end) * 1000
         print(f"  {'OK' if result.ok else 'X '} {result.message}   ({latency_ms:.0f} ms from end of speech)")
@@ -169,7 +157,7 @@ class Assistant:
             event="command", trigger=trigger, wake_score=round(score, 3), audio_file=audio_file,
             text=tr.text, engine=tr.engine, confident=tr.confident,
             intent=intent.name if intent else None, args=intent.args if intent else None,
-            ok=result.ok, result=result.message, asked=bool(result.question),
+            ok=result.ok, result=result.message, asked=bool(result.choices),
             timings_ms={
                 "endpoint": round(utt.endpoint_ms), "stt": round(tr.ms), "route": round(route_ms, 2),
                 "exec": round((done - t_exec) * 1000), "queue": round((t_stt - utt.speech_end) * 1000 - utt.endpoint_ms),

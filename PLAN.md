@@ -198,8 +198,12 @@ Verified without a live speaker: all 20 of the user's recordings route to the ri
 - [x] File search through Everything, scoped to `[search].roots`, with `[search].excludes` for dev junk and system folders (FR-6)
 - [x] Ranking (FR-7): fuzzy per-word coverage of the name (misheard "proposive" still counts), parent-folder words at 0.8 weight ("the D3 plan" → `D3\PLAN.md`), precision, recency, type prior (documents up; code −12; junk −25; anything under `src\`/`main\`/`test\`/dot-folders −15), learned choices (+20), Windows Recent items (+≤10)
 - [x] Date phrases ("last month's", "yesterday's", "this week's"...) are a +20 preference, not a hard filter: a hard `dm:` filter returned only a `.sql` file because no invoice was modified last month
-- [x] Disambiguation: when the runner-up is within `ask_margin` (8), speak the top 3 and listen 6 s without the wake word for first/second/third/one/two/three/cancel (FR-8)
-- [x] Confirmations: chime + on-screen box (bottom right, never takes focus); spoken (SAPI) only for questions (FR-13)
+- [x] Disambiguation: when the runner-up is within `ask_margin` (8), show a clickable "Which one?" list of the top 3 for 30 s; click a row or say "first/second/third" (or one/two/three) as a normal command (FR-8). **Changed after user test:** no spoken question and no automatic listening afterwards. The auto-listen mostly captured junk ("Thank you", "Enjoy").
+- [x] Confirmations: chime + on-screen box (bottom right, never takes focus). No TTS anywhere (FR-13)
+- [x] **After user test, folder names misheard** ("Lumora" → "Loumora" / "do more"; "D" → "D for a day"):
+  - Whisper gets the user's folder and app names as a prompt hint. On synthetic clips tiny.en went from "Lumura" every time to 16/16 correct, beating base.en.
+  - If nothing matches, words are spell-corrected against folder/app vocabulary ("loumora" → "lumora") and retried.
+  - A lone letter = drive ("open D"); "image"/"photo" = Pictures
 - [x] `scripts/try_open.py` (score breakdowns) and `scripts/eval_open.py` + `bench/open_cases.txt` for Gate 2
 - [ ] Gate 2: user fills `bench/open_cases.txt` with ~20 real phrases; live test of the "which one?" dialog by voice
 

@@ -48,7 +48,7 @@ projects = 'D:\PROJECTS'
 # Spoken name = Start menu name, e.g. "browser" = "Google Chrome"
 
 [dialog]
-choice_timeout_ms = 6000  # how long to wait for "first / second / third" without the wake word
+choice_timeout_ms = 30000 # how long the "which one?" list stays on screen and "first / second / third" works
 
 [data]
 dir = "data"            # app cache and learned choices (gitignored)

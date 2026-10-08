@@ -22,9 +22,10 @@ def run_text(texts: list[str], cfg: dict) -> None:
             print(f"{text!r}: I didn't catch that")
             continue
         result = executor.run(intent)
-        print(f"{text!r}: {intent.name} {intent.args or ''} -> {'OK' if result.ok else 'X'} {result.message}")
-        if result.question:
-            print(f"   (would ask: {result.question})")
+        message = "Which one?" if result.choices else result.message
+        print(f"{text!r}: {intent.name} {intent.args or ''} -> {'OK' if result.ok else 'X'} {message}")
+        for n, (name, folder) in enumerate(result.choices or [], start=1):
+            print(f"   {n}. {name}  -  {folder}")
 
 
 def main() -> None:

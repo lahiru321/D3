@@ -85,16 +85,6 @@ class Candidate:
     coverage: float = 0.0
     parts: dict = field(default_factory=dict)
 
-    @property
-    def display(self) -> str:
-        """How to say it: 'Dr Travel Project Proposal, PDF, in Documents'."""
-        stem = self.path.name if self.is_folder else self.path.stem
-        name = re.sub(r"[_\-.]+", " ", stem).strip()
-        kind = "folder" if self.is_folder else (self.path.suffix.lstrip(".").upper() or "file")
-        parent = self.path.parent
-        where = f"in {parent.name}" if parent.name else f"on drive {parent.drive.rstrip(':')}"
-        return f"{name}, {kind}, {where}"
-
 
 def parse(target: str) -> Query:
     text = target.lower().replace("’", "'")
