@@ -18,10 +18,14 @@ from d3.handlers.media import MediaController
 from d3.handlers.volume import VolumeController
 from d3.intents import Intent
 from d3.resolver import Resolver
-from d3.search.apps import AppIndex, close_windows, find_windows, foreground_window, launch_or_focus
+from rapidfuzz import fuzz
+
+from d3.search.apps import (AppIndex, close_windows, explorer_windows, find_windows, foreground_window,
+                            launch_or_focus)
 from d3.search.files import Candidate
 
 THIS_WINDOW = {"this", "it", "window", "this window", "this app", "that", "that window", "current window"}
+ALL_EXPLORER = {"file explorer", "explorer", "folders", "all folders", "all the folders", "explorer windows"}
 
 @dataclass
 class Result:
@@ -93,6 +97,13 @@ class Executor:
             close_windows([hwnd])
             return Result(True, f"Closing {title}")
 
+        if phrase in ALL_EXPLORER:
+            windows = [hwnd for hwnd, _ in explorer_windows()]
+            if not windows:
+                return Result(False, "No File Explorer windows are open")
+            close_windows(windows)
+            return Result(True, "Closing File Explorer" + (f" ({len(windows)} windows)" if len(windows) > 1 else ""))
+
         app = self.resolver.apps.find(phrase) if self.resolver else None
         exe = app.exe if app else AppIndex.fallback_exe(phrase)
         name = app.name if app else phrase
@@ -100,6 +111,13 @@ class Executor:
         if not windows and phrase:
             windows = find_windows(phrase.replace(" ", "") + ".exe", "")  # 'brave' -> brave.exe
         if not windows:
+            # A folder open in File Explorer: 'close documents' -> 'Documents - File Explorer'.
+            folder = " ".join(w for w in words if w not in ("folder", "directory"))
+            matches = [(hwnd, title) for hwnd, title in explorer_windows()
+                       if folder and fuzz.ratio(folder, title.lower()) >= 80]
+            if matches:
+                close_windows([hwnd for hwnd, _ in matches])
+                return Result(True, f"Closing {matches[0][1]}" + (f" ({len(matches)} windows)" if len(matches) > 1 else ""))
             return Result(False, f"{name} isn't open")
         close_windows(windows)
         return Result(True, f"Closing {name}" + (f" ({len(windows)} windows)" if len(windows) > 1 else ""))

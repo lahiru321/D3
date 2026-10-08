@@ -18,7 +18,7 @@ from vosk import KaldiRecognizer, Model, SetLogLevel
 # Biases Whisper toward D3's vocabulary.
 INITIAL_PROMPT = (
     "Voice commands: pause, continue, resume, play, stop, next, skip, previous, go back, "
-    "volume up, volume down, louder, quieter, mute, unmute, open, launch, show me, folder, drive, "
+    "volume up, volume down, louder, quieter, mute, unmute, open, close, quit, launch, show me, folder, drive, "
     "first, second, third, cancel, never mind, VS Code, Downloads, StoreX."
 )
 

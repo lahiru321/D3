@@ -13,6 +13,14 @@ from pycaw.pycaw import AudioUtilities
 class InputDevice:
     name: str
     is_default: bool
+    # A Bluetooth headset mic only works in the hands-free (phone call) profile: while it's
+    # in use the headset's sound drops to mono, low quality. Worth warning about.
+    bluetooth: bool = False
+
+
+def _is_bluetooth(device) -> bool:
+    return any(isinstance(v, str) and ("BTHHFENUM" in v.upper() or "BTHENUM" in v.upper())
+               for v in device.properties.values())
 
 
 def active_inputs() -> list[InputDevice]:
@@ -20,5 +28,5 @@ def active_inputs() -> list[InputDevice]:
     default_id = default.GetId() if default else None
     devices = AudioUtilities.GetAllDevices(data_flow=EDataFlow.eCapture.value,
                                            device_state=DEVICE_STATE.ACTIVE.value)
-    return sorted((InputDevice(d.FriendlyName, d.id == default_id) for d in devices if d.FriendlyName),
+    return sorted((InputDevice(d.FriendlyName, d.id == default_id, _is_bluetooth(d)) for d in devices if d.FriendlyName),
                   key=lambda d: (not d.is_default, d.name.lower()))

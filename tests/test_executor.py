@@ -31,6 +31,21 @@ def make(tmp_path, kind, paths):
     return Executor(media, volume, resolver), resolver, files
 
 
+def test_close_explorer_folder_by_name(tmp_path, monkeypatch):
+    # Live bug: "close document" said "isn't open" with 'Documents - File Explorer' on screen.
+    closed = []
+    monkeypatch.setattr("d3.executor.explorer_windows", lambda: [(11, "Documents"), (12, "Downloads")])
+    monkeypatch.setattr("d3.executor.find_windows", lambda exe, hint: [])
+    monkeypatch.setattr("d3.executor.close_windows", closed.extend)
+    executor, resolver, _ = make(tmp_path, R.FILE, ["a.png"])
+    resolver.apps = SimpleNamespace(find=lambda phrase: None)
+
+    assert executor.run(Intent(I.CLOSE, {"target": "document"})).ok and closed == [11]
+    assert executor.run(Intent(I.CLOSE, {"target": "the downloads folder"})).ok and closed == [11, 12]
+    assert executor.run(Intent(I.CLOSE, {"target": "file explorer"})).ok and closed == [11, 12, 11, 12]
+    assert not executor.run(Intent(I.CLOSE, {"target": "pictures"})).ok
+
+
 def test_auto_open_does_not_teach_itself(tmp_path, monkeypatch):
     # Live bug: each wrong auto-open was recorded as a choice and reinforced itself.
     monkeypatch.setattr("os.startfile", lambda p: None)

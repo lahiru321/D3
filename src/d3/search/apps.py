@@ -174,6 +174,24 @@ def focus_window(hwnd: int) -> None:
 
 
 WM_CLOSE = 0x0010
+EXPLORER_CLASS = "CabinetWClass"  # File Explorer folder windows (not the taskbar or desktop, which share explorer.exe)
+
+
+def explorer_windows() -> list[tuple[int, str]]:
+    """Open File Explorer windows and the folder each shows ('Documents - File Explorer' -> 'Documents')."""
+    found: list[tuple[int, str]] = []
+    cls = ctypes.create_unicode_buffer(64)
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def callback(hwnd, _lparam):
+        if user32.IsWindowVisible(hwnd):
+            user32.GetClassNameW(hwnd, cls, len(cls))
+            if cls.value == EXPLORER_CLASS:
+                found.append((hwnd, _window_title(hwnd).removesuffix(" - File Explorer")))
+        return True
+
+    user32.EnumWindows(callback, 0)
+    return found
 
 
 def close_windows(windows: list[int]) -> None:

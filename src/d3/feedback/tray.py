@@ -96,8 +96,8 @@ class Tray:
 
     def _mic_items(self):
         # pystray rejects callbacks with more than two parameters (defaults count), hence the factories.
-        def choose(name: str):
-            return lambda: self._choose_mic(name)
+        def choose(name: str, bluetooth: bool = False):
+            return lambda: self._choose_mic(name, bluetooth)
 
         def is_current(name: str):
             return lambda _item: self._a.listener.device_spec == name
@@ -106,15 +106,17 @@ class Tray:
         yield pystray.MenuItem(f"Windows default ({default})" if default else "Windows default",
                                choose(""), checked=is_current(""), radio=True)
         for device in self._devices:
-            yield pystray.MenuItem(device.name, choose(device.name), checked=is_current(device.name), radio=True)
+            label = f"{device.name}   (Bluetooth: lowers headset sound quality)" if device.bluetooth else device.name
+            yield pystray.MenuItem(label, choose(device.name, device.bluetooth), checked=is_current(device.name),
+                                   radio=True)
         if not self._devices:
             yield pystray.MenuItem("No microphone connected", None, enabled=False)
 
     # --- actions (run on the tray thread; slow work goes to a thread) -------
 
-    def _choose_mic(self, name: str) -> None:
+    def _choose_mic(self, name: str, bluetooth: bool = False) -> None:
         def switch():
-            ok = self._a.choose_microphone(name)
+            ok = self._a.choose_microphone(name, bluetooth)
             self._state = ""  # force a refresh of title/menu
             self._icon.update_menu()
             if not ok:

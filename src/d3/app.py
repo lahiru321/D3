@@ -131,12 +131,14 @@ class Assistant:
         self.osd.show("Listening paused" if paused else "Listening again", "info")
         self.log.write(event="paused" if paused else "resumed")
 
-    def choose_microphone(self, name: str) -> bool:
+    def choose_microphone(self, name: str, bluetooth: bool = False) -> bool:
         """From the tray: switch now and remember it ('' = Windows default)."""
         ok = self.listener.set_device(name)
         self.settings.set("audio_device", name)
         if ok:
-            self.osd.show(f"Microphone: {self.listener.device_name}", "info")
+            note = "\nBluetooth headset mics put the headset in call mode: sound quality drops while D3 uses it." \
+                if bluetooth else ""
+            self.osd.show(f"Microphone: {self.listener.device_name}{note}", "info")
         self.log.write(event="microphone", chosen=name, using=self.listener.device_name, ok=ok)
         return ok
 
